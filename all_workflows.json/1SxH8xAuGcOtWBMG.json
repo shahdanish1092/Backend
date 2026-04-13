@@ -1,0 +1,158 @@
+{
+  "updatedAt": "2026-03-25T17:52:04.466Z",
+  "createdAt": "2026-03-25T17:52:04.466Z",
+  "id": "1SxH8xAuGcOtWBMG",
+  "name": "Rule | Daily AI Summary Rule | daily.summary",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24,
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -640,
+        -80
+      ],
+      "id": "e51a065b-4b5a-42a4-85b1-44c67232038f",
+      "name": "Rule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst url = 'http://backend:8000/api/automation-rules/e86b2c70-1a39-412d-b59f-6882fc12f42b/trigger/daily-summary?summary_date=' + today;\nconst headers = {\"Content-Type\": \"application/json\", \"X-Service-Token\": \"your-secure-backend-service-token-here\"};\nconst resp = await this.helpers.httpRequest({ method: 'POST', url, json: true, headers });\nreturn [{ json: resp }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        -80
+      ],
+      "id": "db00531f-0a91-488a-a1f3-6c8aad10e437",
+      "name": "Generate AI Summary"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.summary?.health_status }}",
+              "rightValue": "Healthy",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        -80
+      ],
+      "id": "c3d0ac07-ac54-46f1-b493-24d44d44af20",
+      "name": "Health Alert Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('[Daily Summary]', $json.summary?.health_status, $json.summary?.summary_date);\nreturn [{ json: $json }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        60
+      ],
+      "id": "a84c4eed-b3b9-4d8e-8feb-0c4b1d4f72ec",
+      "name": "Log Summary"
+    }
+  ],
+  "connections": {
+    "Rule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Summary": {
+      "main": [
+        [
+          {
+            "node": "Health Alert Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Alert Check": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Log Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "node:Rule Trigger": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": null,
+  "pinData": null,
+  "versionId": "daabb2a9-994c-4739-bdeb-5ba53f30f209",
+  "activeVersionId": null,
+  "versionCounter": 20,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-25T17:52:04.474Z",
+      "createdAt": "2026-03-25T17:52:04.474Z",
+      "role": "workflow:owner",
+      "workflowId": "1SxH8xAuGcOtWBMG",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

@@ -1,0 +1,316 @@
+{
+  "updatedAt": "2026-03-21T17:42:00.000Z",
+  "createdAt": "2026-03-14T13:01:19.957Z",
+  "id": "36WLjce68T8XZVns",
+  "name": "Daily Summary Pipeline",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "daily-summary-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "189ec1f6-165b-48f7-8f86-40c9f64434ef",
+      "name": "Summary Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        640
+      ],
+      "webhookId": "026dd3a3-4490-453f-b5bd-8ce2bffd9afb"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Daily Summary Pipeline\",\n  \"status\": \"started\",\n  \"request_id\": \"{{ $json.request_id || Date.now().toString() }}\",\n  \"submitted_at\": \"{{ $now.toISOString() }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "9c306598-1eb5-45fb-82b7-730477931ce1",
+      "name": "Log Execution Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1696,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "05e56b97-678a-4de3-8e4d-2151417a1621",
+      "name": "Extract Summary Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1856,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:8000/api/activity/daily-summary?summary_date={{ $json.date }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "953ba6bb-8cb1-4189-a9d2-47cfb539f5c1",
+      "name": "Fetch Daily Activity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2096,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const activity = $input.first().json;\nif (!activity || Object.keys(activity).length === 0) {\n  return [{\n    json: {\n      date: new Date().toISOString().split('T')[0],\n      executions: [],\n      calendar_events: [],\n      emails_sent: [],\n      summary: 'No activity data available for today'\n    }\n  }];\n}\nreturn [{\n  json: activity\n}];"
+      },
+      "id": "c073250f-4062-437c-ae4e-45f3ffda6362",
+      "name": "Fallback Empty Activity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:8000/api/activity/ai-daily-summary?summary_date={{ $json.date }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "d7145933-8c85-457e-899a-2ccb562538c8",
+      "name": "Fetch AI Daily Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2416,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Backend already ran the LLM — just enrich with pipeline metadata\nconst summary = $input.first().json;\nconst ctx = $('Extract Summary Context').first().json;\n\nreturn [{ json: {\n  ...summary,\n  request_id:   ctx.request_id,\n  pipeline:     'daily_summary',\n  generated_at: summary.generated_at || new Date().toISOString(),\n  status:       summary.health_status === 'Healthy' ? 'success' : 'needs_attention',\n} }];"
+      },
+      "id": "b337c576-4479-4cbf-a822-8478e1787e4d",
+      "name": "Enrich Summary Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2656,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Daily Summary Pipeline\",\n  \"status\":        \"{{ $json.status || 'success' }}\",\n  \"request_id\":    \"{{ $json.request_id }}\",\n  \"completed_at\":  \"{{ $now.toISOString() }}\",\n  \"summary\":       \"{{ $json.ai_summary?.slice(0, 200) || 'Daily summary generated' }}\",\n  \"error\":         \"{{ $json.llm_error || '' }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ca3a1470-ca2e-49c6-98ba-2945521d5451",
+      "name": "Log Execution End",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2816,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "7dacae08-7abf-4562-8daa-40531d258bb1",
+      "name": "Respond Summary Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2976,
+        640
+      ]
+    }
+  ],
+  "connections": {
+    "Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Execution Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution Start": {
+      "main": [
+        [
+          {
+            "node": "Extract Summary Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Summary Context": {
+      "main": [
+        [
+          {
+            "node": "Fetch Daily Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Daily Activity": {
+      "main": [
+        [
+          {
+            "node": "Fallback Empty Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback Empty Activity": {
+      "main": [
+        [
+          {
+            "node": "Fetch AI Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AI Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Enrich Summary Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Summary Response": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution End": {
+      "main": [
+        [
+          {
+            "node": "Respond Summary Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "3e13af22-d593-48ba-b7df-4abe267f55c1",
+  "activeVersionId": null,
+  "versionCounter": 38,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-14T13:01:19.962Z",
+      "createdAt": "2026-03-14T13:01:19.962Z",
+      "role": "workflow:owner",
+      "workflowId": "36WLjce68T8XZVns",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "updatedAt": "2026-04-11T16:56:28.824Z",
+  "createdAt": "2026-04-11T15:50:36.039Z",
+  "id": "0CmQgkQZspaGecYn",
+  "name": "HR Recruitment Executor (fixed)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "execute-workflow",
+        "options": {}
+      },
+      "id": "fb9bb705-7cb5-4d9b-ac56-a17a28601ce6",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1,
+      "webhookId": "dd8b6724-5510-4f7f-8091-2bee5a5dd130"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "request_id",
+              "value": "={{ $json.body.request_id }}"
+            },
+            {
+              "name": "workflow_type",
+              "value": "={{ $json.body.workflow_type }}"
+            },
+            {
+              "name": "user_email",
+              "value": "={{ $json.body.user_email }}"
+            },
+            {
+              "name": "payload",
+              "value": "={{ $json.body.payload }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5e0dc25f-7fc8-486f-88f3-017051e59fa2",
+      "name": "Extract Context",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        256,
+        0
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "extracted_text",
+              "value": "={{ $json.payload?.email_data?.body || $json.payload?.email_data?.subject || ($json.payload ? JSON.stringify($json.payload) : '') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0b312f0a-b4b4-48b4-a9ed-c0da796be3c0",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        560,
+        0
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8010/api/rank/candidates",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "529f1bfb-7eb8-4a28-9296-ee93d10b6d17",
+      "name": "Rank Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        864,
+        0
+      ],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8010/api/shortlist/candidates",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=={{\n  {\n    request_id: $json.request_id,\n    ranked_candidates: $json.ranked_candidates || $json.body?.ranked_candidates || [],\n    top_k: 3,\n    timezone: \"UTC\",\n    working_hours_start: \"09:00\",\n    working_hours_end: \"17:00\",\n    slot_duration_minutes: 30,\n    slot_gap_minutes: 15,\n    use_calendar_freebusy: false,\n    freebusy_lookahead_days: 14,\n    calendar_account: \"primary\"\n  }\n}}",
+        "options": {}
+      },
+      "id": "eaafeee5-6057-4b90-8fd3-8764a0a3ad67",
+      "name": "Shortlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        1152,
+        0
+      ],
+      "typeVersion": 4.2
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Context": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "Rank Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank Candidates": {
+      "main": [
+        [
+          {
+            "node": "Shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "localhost:5678",
+            "user-agent": "python-requests/2.33.1",
+            "accept-encoding": "gzip, deflate, zstd",
+            "accept": "*/*",
+            "connection": "keep-alive",
+            "content-length": "358",
+            "content-type": "application/json"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "request_id": "2103c185-fd5a-49b8-aa38-61c5eb708816",
+            "workflow_type": "hr_recruitment",
+            "user_email": "triage-run-1775925595@example.com",
+            "payload": {
+              "email_data": {
+                "subject": "Re-run test",
+                "body": "Testing triage -> n8n with API key.",
+                "from": "applicant@example.com",
+                "attachments": []
+              }
+            },
+            "callback_url": "http://localhost:8010/api/execution-callback"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/execute-workflow",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "728a3581-c52d-40cf-aa49-873b642ff822",
+  "activeVersionId": "b2b2434d-214a-4a61-9d0d-06fd459b96ee",
+  "versionCounter": 58,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-11T15:50:36.050Z",
+      "createdAt": "2026-04-11T15:50:36.050Z",
+      "role": "workflow:owner",
+      "workflowId": "0CmQgkQZspaGecYn",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

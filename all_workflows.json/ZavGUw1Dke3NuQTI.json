@@ -1,0 +1,284 @@
+{
+  "updatedAt": "2026-03-23T17:13:38.000Z",
+  "createdAt": "2026-03-14T12:58:12.195Z",
+  "id": "ZavGUw1Dke3NuQTI",
+  "name": "Resume Pipeline",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resume-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ad27f650-7877-46a9-a4ea-6070a0fc2895",
+      "name": "Resume Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        144
+      ],
+      "webhookId": "bc687a38-49c9-4d82-a3a0-ccb3636e2929"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Resume Pipeline\",\n  \"status\": \"started\",\n  \"request_id\": \"{{ $json.request_id || $json.rule_id || Date.now().toString() }}\",\n  \"submitted_at\": \"{{ $now.toISOString() }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "999341dd-0c8a-4654-a64e-4bb5e5c0d62b",
+      "name": "Log Execution Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1408,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "f765b08a-eb04-4dbb-a561-ea20cac12623",
+      "name": "Extract Resume Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1632,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// If Gmail trigger forwarded attachments as base64, process them directly.\n// Otherwise pass through for hr-simulation to handle.\nconst data = $input.first().json;\nconst attachments = $('Resume Trigger').first().json?.attachments || [];\nconst content_b64 = $('Resume Trigger').first().json?.content_base64;\n\n// Build the attachment list for downstream\nlet att_payloads = attachments;\nif (!att_payloads.length && content_b64) {\n  att_payloads = [{\n    filename: $('Resume Trigger').first().json?.filename || 'resume.pdf',\n    mime_type: $('Resume Trigger').first().json?.mime_type || 'application/pdf',\n    content_base64: content_b64,\n  }];\n}\n\nreturn [{ json: {\n  ...data,\n  attachment_payloads: att_payloads,\n  has_attachments: att_payloads.length > 0,\n  documents_source: att_payloads.length > 0 ? 'trigger://gmail_attachment' : data.documents_source,\n} }];"
+      },
+      "id": "fb2da679-128e-4f40-aa35-ea2727e1a513",
+      "name": "Ingest Attachments (if forwarded)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/simulate/hr",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_statement\":       \"{{ $json.user_statement }}\",\n  \"documents_source\":     \"{{ $json.documents_source }}\",\n  \"criteria\":             \"{{ $json.criteria }}\",\n  \"ranking_logic\":        \"weighted_scoring\",\n  \"shortlist_limit\":      3,\n  \"hr_email\":             \"hr@company.com\",\n  \"hr_calendar\":          \"primary\",\n  \"timezone\":             \"{{ $json.timezone }}\",\n  \"working_hours_start\":  \"10:00\",\n  \"working_hours_end\":    \"18:00\",\n  \"slot_duration_minutes\": 30,\n  \"slot_gap_minutes\":     15,\n  \"freebusy_lookahead_days\": 7,\n  \"wait_for_completion\":  false,\n  \"wait_timeout_seconds\": 30,\n  \"poll_interval_seconds\": 2,\n  \"attachment_payloads\":  {{ JSON.stringify($json.attachment_payloads || []) }}\n}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "ce4e2568-8ce7-4777-bf76-e790a1005155",
+      "name": "Call Backend HR Simulation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2080,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "be2cb957-58ef-49af-b7cb-41888b6c32eb",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2304,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Resume Pipeline\",\n  \"status\": \"{{ $json.status || 'success' }}\",\n  \"request_id\": \"{{ $json.request_id }}\",\n  \"completed_at\": \"{{ $now.toISOString() }}\",\n  \"error\": \"{{ $json.error || '' }}\",\n  \"summary\": \"{{ $json.summary || 'Resume processing completed' }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e9de2678-01d9-43d2-9ed7-0f082dd08814",
+      "name": "Log Execution End",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2528,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "013939c9-45f6-4200-9f72-bab010e72b05",
+      "name": "Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2752,
+        144
+      ]
+    }
+  ],
+  "connections": {
+    "Resume Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Execution Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution Start": {
+      "main": [
+        [
+          {
+            "node": "Extract Resume Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Resume Context": {
+      "main": [
+        [
+          {
+            "node": "Ingest Attachments (if forwarded)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingest Attachments (if forwarded)": {
+      "main": [
+        [
+          {
+            "node": "Call Backend HR Simulation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Backend HR Simulation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution End": {
+      "main": [
+        [
+          {
+            "node": "Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "883e4206-fe8c-47df-98a7-116e9c84701d",
+  "activeVersionId": null,
+  "versionCounter": 57,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-14T12:58:12.202Z",
+      "createdAt": "2026-03-14T12:58:12.202Z",
+      "role": "workflow:owner",
+      "workflowId": "ZavGUw1Dke3NuQTI",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Resume Pipeline",
+    "description": ""
+  }
+}

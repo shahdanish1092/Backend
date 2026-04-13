@@ -1,0 +1,156 @@
+/* Spatial+ Office Automation Styles */
+
+.App {
+  min-height: 100vh;
+}
+
+.font-outfit {
+  font-family: 'Outfit', sans-serif;
+}
+
+.font-jakarta {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Smooth page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+/* Card hover effects */
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Focus states */
+*:focus-visible {
+  outline: 2px solid #F97316;
+  outline-offset: 2px;
+}
+
+/* Button active states */
+button:active {
+  transform: scale(0.98);
+}
+
+/* Table row hover */
+tr:hover td {
+  background-color: #F8FAFC;
+}
+
+/* Badge animations */
+.badge-pulse {
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Loading spinner */
+.spinner {
+  border: 3px solid #E2E8F0;
+  border-top-color: #F97316;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sidebar active indicator animation */
+.sidebar-active-indicator {
+  animation: slide-in 200ms ease-out;
+}
+
+@keyframes slide-in {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* Upload zone drag state */
+.upload-drag-active {
+  background-color: #FFF7ED;
+  border-color: #F97316;
+}
+
+/* Status stepper connector animation */
+.stepper-connector-active {
+  background: linear-gradient(90deg, #10B981 50%, #E2E8F0 50%);
+  background-size: 200% 100%;
+  animation: progress 1s ease-out forwards;
+}
+
+@keyframes progress {
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* Mobile bottom nav */
+@media (max-width: 1023px) {
+  .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: #0F172A;
+    padding: 0.5rem;
+    display: flex;
+    justify-content: space-around;
+  }
+}
+
+/* Toast styles */
+[data-sonner-toaster] {
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+}
+
+/* Scrollbar styling for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

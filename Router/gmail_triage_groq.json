@@ -1,0 +1,93 @@
+{
+  "id": "router-groq-001",
+  "meta": { "instanceId": "router-groq-001" },
+  "name": "Ai-powered email triage & auto-response (Groq)",
+  "tags": [],
+  "nodes": [
+    {
+      "id": "gmail-trigger-1",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "position": [120,240],
+      "parameters": { "simple": false, "filters": {}, "options": { "downloadAttachments": false }, "pollTimes": { "item": [ { "mode": "everyMinute" } ] } },
+      "credentials": { "gmailOAuth2": { "id": "cred-1", "name": "gmailOAuth2 Credential" } },
+      "typeVersion": 1
+    },
+    {
+      "id": "text-classifier-1",
+      "name": "Text Classifier",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "position": [420,240],
+      "parameters": {
+        "text": "={{ $json.plainText || $json.subject || $json.body }}",
+        "categories": {
+          "categories": [
+            { "category": "Recruitment", "description": "Emails related to recruitment and candidates" },
+            { "category": "Invoice", "description": "Invoice and billing related emails" },
+            { "category": "General", "description": "General or uncategorized emails" }
+          ]
+        },
+        "options": { "systemPrompt": "Classify this incoming email into one of the categories." }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "set-recruitment",
+      "name": "Add Label: Recruitment",
+      "type": "n8n-nodes-base.set",
+      "position": [720,120],
+      "parameters": { "values": { "string": [ { "name": "label", "value": "Recruitment" }, { "name": "category", "value": "Recruitment" } ] }, "options": {} },
+      "typeVersion": 1
+    },
+    {
+      "id": "set-invoice",
+      "name": "Add Label: Invoice",
+      "type": "n8n-nodes-base.set",
+      "position": [720,240],
+      "parameters": { "values": { "string": [ { "name": "label", "value": "Invoice" }, { "name": "category", "value": "Invoice" } ] }, "options": {} },
+      "typeVersion": 1
+    },
+    {
+      "id": "set-general",
+      "name": "Add Label: General",
+      "type": "n8n-nodes-base.set",
+      "position": [720,360],
+      "parameters": { "values": { "string": [ { "name": "label", "value": "General" }, { "name": "category", "value": "General" } ] }, "options": {} },
+      "typeVersion": 1
+    },
+    {
+      "id": "log-triage-1",
+      "name": "Log Triage to FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1000,240],
+      "parameters": {
+        "url": "= {{$env.FASTAPI_BASE_URL}}/api/internal/triage-result",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_email\": \"={{$env.COMPANY_EMAIL}}\",\n  \"category\": \"={{$json.category || $json.label || 'General'}}\",\n  \"email_subject\": \"={{$json.subject}}\",\n  \"email_from\": \"={{$json.from}}\",\n  \"action_taken\": \"classified_and_labelled\"\n}"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "groq-reply-1",
+      "name": "Groq Reply Generator",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "position": [1000,420],
+      "parameters": { "model": "llama3-70b-8192", "options": {}, "messages": "=Write a short helpful reply acknowledging receipt and next steps to the sender: {{ $json.plainText || $json.subject }}" },
+      "typeVersion": 1
+    }
+  ],
+  "active": false,
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "versionId": "gmail_triage_groq_v1",
+  "connections": {
+    "Gmail Trigger": { "main": [ [ { "node": "Text Classifier", "type": "main", "index": 0 } ] ] },
+    "Text Classifier": { "main": [ [ { "node": "Add Label: Recruitment", "type": "main", "index": 0 }, { "node": "Log Triage to FastAPI", "type": "main", "index": 0 } ], [ { "node": "Add Label: Invoice", "type": "main", "index": 0 }, { "node": "Log Triage to FastAPI", "type": "main", "index": 0 } ], [ { "node": "Add Label: General", "type": "main", "index": 0 }, { "node": "Log Triage to FastAPI", "type": "main", "index": 0 } ] ] },
+    "Add Label: Recruitment": { "main": [ [ { "node": "Groq Reply Generator", "type": "main", "index": 0 } ] ] },
+    "Add Label: Invoice": { "main": [ [ { "node": "Groq Reply Generator", "type": "main", "index": 0 } ] ] },
+    "Add Label: General": { "main": [ [ { "node": "Groq Reply Generator", "type": "main", "index": 0 } ] ] }
+  }
+}

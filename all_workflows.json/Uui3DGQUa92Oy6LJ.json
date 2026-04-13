@@ -1,0 +1,274 @@
+{
+  "updatedAt": "2026-03-21T17:42:21.000Z",
+  "createdAt": "2026-03-14T13:02:53.257Z",
+  "id": "Uui3DGQUa92Oy6LJ",
+  "name": "Document Upload Trigger",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "document-upload",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b1240df7-9b0a-4b0b-8f24-4732a17cfb97",
+      "name": "Document Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        576
+      ],
+      "webhookId": "b0de91d6-c24f-4da5-a5eb-49a465d1d407"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "7c10de9d-2b10-4fb5-b069-56680d706b17",
+      "name": "Extract Upload Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        96,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.document_type }}",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "rightValue": "invoice"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7b29b3a8-2d35-4779-b50c-9e06c04638d9",
+      "name": "Route by Document Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        336,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/attachments/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "feef8dcf-d3d5-4cf1-bb3e-e90c4f3e0205",
+      "name": "Send to Backend Ingest (Invoice)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        576,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/attachments/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "8f13d9a0-d621-45da-aec5-7b76611c3a26",
+      "name": "Send to Backend Ingest (Resume)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        576,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "644612c1-8b76-4791-8795-2532afa3769a",
+      "name": "Prepare Upload Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        816,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "6b00fef9-c7a5-4f9d-9712-f8e1ced09c60",
+      "name": "Respond Upload Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1056,
+        576
+      ]
+    }
+  ],
+  "connections": {
+    "Document Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Upload Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Upload Context": {
+      "main": [
+        [
+          {
+            "node": "Route by Document Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Document Type": {
+      "main": [
+        [
+          {
+            "node": "Send to Backend Ingest (Invoice)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send to Backend Ingest (Resume)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Backend Ingest (Invoice)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upload Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Backend Ingest (Resume)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upload Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upload Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Upload Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "cace443a-bf77-44a4-87a1-4401ecb191d5",
+  "activeVersionId": null,
+  "versionCounter": 22,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-14T13:02:53.262Z",
+      "createdAt": "2026-03-14T13:02:53.262Z",
+      "role": "workflow:owner",
+      "workflowId": "Uui3DGQUa92Oy6LJ",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

@@ -1,0 +1,297 @@
+{
+  "updatedAt": "2026-03-21T17:42:42.000Z",
+  "createdAt": "2026-03-15T16:55:48.744Z",
+  "id": "bTbYURxoMCnC1DV3",
+  "name": "Gmail_attachment",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {}
+      },
+      "id": "4693c58d-a3c2-4e28-a43c-ea178a93d3b7",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        112
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "XxqaRtw9swG1kcXj",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a clean attachment array from n8n's $binary object.\n// Each entry carries full base64 content so the backend needs NO second Gmail fetch.\n\nconst emailData = $json;\nconst binaryData = $binary || {};\n\nconst attachments = Object.entries(binaryData).map(([key, b]) => ({\n  filename: b.fileName || key,\n  mime_type: b.mimeType || 'application/octet-stream',\n  content_base64: b.data,        // n8n stores binary as base64 string\n  size_bytes: b.fileSize || 0,\n  attachment_id: key,\n}));\n\nreturn [{\n  json: {\n    // Standard Gmail metadata\n    id: emailData.id,\n    threadId: emailData.threadId,\n    messageId: emailData.id,\n    subject: emailData.subject || '',\n    from: emailData.from || '',\n    to: emailData.to || '',\n    date: emailData.date || '',\n    snippet: emailData.snippet || '',\n    labelIds: emailData.labelIds || [],\n    body_text: emailData.text || emailData.bodyText || '',\n    // Forwarded attachments — full binary, no re-fetch needed\n    attachments: attachments,\n    attachment_count: attachments.length,\n  }\n}];"
+      },
+      "id": "7d4b45ba-b4c9-4231-a7ee-2237f33dea77",
+      "name": "Build Attachment Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL }}/api/automation-rules/{{ $env.RULE_ID }}/dispatch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "4b883896-f6ee-4421-8c7f-b838139f4a85",
+      "name": "Dispatch to Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -480,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1b350e2a-350f-4b6f-982a-5ff0e325f58b",
+      "name": "Check for Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log dispatch error for debugging\nconsole.error('[Gmail Trigger] Backend dispatch failed:', JSON.stringify($json));\nreturn [{ json: { logged_error: $json } }];"
+      },
+      "id": "450f0f35-895a-44a9-98c1-602f1ae16451",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Successful dispatch — pass through\nconsole.log('[Gmail Trigger] Dispatched successfully:', $json.rule_id, 'intent:', $json.intent_id);\nreturn [{ json: $json }];"
+      },
+      "id": "a377e488-4cb6-48fa-8465-59baed728229",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Attachment Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Attachment Payload": {
+      "main": [
+        [
+          {
+            "node": "Dispatch to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch to Backend": {
+      "main": [
+        [
+          {
+            "node": "Check for Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Error": {
+      "main": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Gmail Trigger": {
+      "lastTimeChecked": 1774096218,
+      "possibleDuplicates": [
+        "19d106005ccabc94",
+        "19d0ff3675742913",
+        "19d0fbea9f3cc713",
+        "19d0debff1533c62",
+        "19d0de85c8cda37f",
+        "19d0c28afb083fc8",
+        "19d0c1f7022f4217",
+        "19d0c1170270749d",
+        "19d0c0119a03cfc3",
+        "19d0bf75f1f97480",
+        "19d0bd6c8670df65",
+        "19d0bc62acbf5ca8",
+        "19d0b4bbdf85c1ff",
+        "19d0b0a4ef31061d",
+        "19d0ab6dbcae0493",
+        "19d0a403d9d8cd7d",
+        "19d097b2da49c046",
+        "19d09041fbdd059a",
+        "19d072e52bcf48c6",
+        "19d070d4f1d34aff",
+        "19d06ea41e156b93",
+        "19d06d1a97c06bd2",
+        "19d06d0f7e862fe4",
+        "19d06946770fbaab",
+        "19d059fca8e29f42",
+        "19d04d7b2fa61324",
+        "19d04b087872c639",
+        "19d047b5fc784952",
+        "19d03f309de91ae3",
+        "19d03e37662fca26",
+        "19d0297d039ee983",
+        "19d023602d33186c",
+        "19d020b215aacef8",
+        "19d01dbcf1c20e93",
+        "19d01aafde2c9e9e",
+        "19d00ed27bb4e633",
+        "19cff7eda616cff1",
+        "19cfcd5a4ec201d6",
+        "19cfca3d12f1ecfa",
+        "19cfc842b413a11a",
+        "19cfbfe3e2817ec6",
+        "19cfbcd2b94ebd80",
+        "19cfb42f476d96b0",
+        "19cfb0b2e8589765",
+        "19cfa6daaa43a2a9",
+        "19cfa5ca72e4e91a",
+        "19cf92fb848b19b8",
+        "19cf7a0a63f19829",
+        "19cf7a03040306b3",
+        "19cf79fbfa9df988",
+        "19cf7795d4b900bb",
+        "19cf75dc94dbb7fe",
+        "19cf72bb44ebca53",
+        "19cf6c597db61927",
+        "19cf6a073df9ed62",
+        "19cf52231058f397",
+        "19cf52029f230aa0",
+        "19cf4af873637dbe",
+        "19cf292833ed73ba"
+      ]
+    }
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "12d977c0-3ab4-4f1b-873a-c214ffbc96bc",
+  "activeVersionId": null,
+  "versionCounter": 13,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-15T16:55:48.758Z",
+      "createdAt": "2026-03-15T16:55:48.758Z",
+      "role": "workflow:owner",
+      "workflowId": "bTbYURxoMCnC1DV3",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

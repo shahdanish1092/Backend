@@ -1,0 +1,368 @@
+{
+  "updatedAt": "2026-03-21T17:41:34.000Z",
+  "createdAt": "2026-03-14T12:59:44.641Z",
+  "id": "AZiKzfqtZIPYtVh4",
+  "name": "Invoice Pipeline",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "33b3dfd6-8b1b-4298-bf9d-1a333e828eb5",
+      "name": "Invoice Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        176
+      ],
+      "webhookId": "36ab2b6f-51fb-487b-80bc-0e5bbaf44fba"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Invoice Pipeline\",\n  \"status\": \"started\",\n  \"request_id\": \"{{ $json.request_id || Date.now().toString() }}\",\n  \"submitted_at\": \"{{ $now.toISOString() }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b14c0dd2-41a8-4b03-b3ea-6cc0107c4fd8",
+      "name": "Log Execution Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2624,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "eed7b370-8d32-4eb0-a1d4-05c8a5258b80",
+      "name": "Extract Invoice Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2784,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/document/extract",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content_base64\": \"{{ $json.content_base64 || '' }}\",\n  \"filename\": \"{{ $json.filename }}\",\n  \"mime_type\": \"{{ $json.mime_type }}\",\n  \"language\": \"eng\",\n  \"use_ocr_fallback\": true,\n  \"request_id\": \"{{ $json.request_id }}\",\n  \"workflow_type\": \"invoice_processing\",\n  \"step_id\": \"extract_document\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "3a7bdcba-59eb-4f42-bf2c-8d7dd7e27e2a",
+      "name": "Extract Document Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3024,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "38c4af0a-cfca-4eec-a8eb-a4b8b81c9847",
+      "name": "Validate Extraction",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3264,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"max_tokens\": 400,\n  \"temperature\": 0.0,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Extract invoice fields from the text. Return ONLY valid JSON with keys: vendor_name, invoice_number, invoice_date, due_date, subtotal, tax, total_amount, currency, line_items (array of {description, quantity, unit_price, amount}). Use null for missing fields.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Extract invoice fields from: {{ $json.extracted_text || 'No text extracted' }}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "dc79beb7-07ce-4972-8bc3-814a469c54d1",
+      "name": "Parse Invoice Fields (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3424,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llm = $input.first().json;\nlet fields = {};\ntry {\n  const content = llm.choices?.[0]?.message?.content || '{}';\n  fields = JSON.parse(content);\n} catch(e) {\n  fields = { parse_error: String(e), raw: String(llm).slice(0, 200) };\n}\n// Carry forward context from earlier nodes\nconst ctx = $('Extract Invoice Context').first().json;\nreturn [{ json: {\n  ...fields,\n  filename:   ctx.filename,\n  request_id: ctx.request_id,\n  rule_id:    ctx.rule_id,\n  target_sheet: ctx.target_sheet,\n  processed_at: new Date().toISOString(),\n  status: 'parsed'\n} }];"
+      },
+      "id": "0a8fb6fd-ae58-4bc5-ab0b-bebaec676e09",
+      "name": "Build Invoice Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3584,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/execution-callback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"request_id\": \"{{ $json.request_id }}\",\n  \"workflow_type\": \"invoice_processing\",\n  \"status\": \"executed\",\n  \"results\": [{\n    \"step_id\": \"invoice_parsed\",\n    \"vendor_name\":     \"{{ $json.vendor_name }}\",\n    \"invoice_number\":  \"{{ $json.invoice_number }}\",\n    \"invoice_date\":    \"{{ $json.invoice_date }}\",\n    \"total_amount\":    \"{{ $json.total_amount }}\",\n    \"currency\":        \"{{ $json.currency }}\",\n    \"filename\":        \"{{ $json.filename }}\"\n  }]\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "4cab98a5-9278-46f9-ae1f-cfb076fec017",
+      "name": "Store Invoice Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3744,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Invoice Pipeline\",\n  \"status\": \"{{ $json.status || 'success' }}\",\n  \"request_id\": \"{{ $json.request_id }}\",\n  \"completed_at\": \"{{ $now.toISOString() }}\",\n  \"error\": \"{{ $json.error || '' }}\",\n  \"summary\": \"{{ $json.summary || 'Invoice processing completed' }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "c63440ef-c748-4cce-9c98-8c7f7c7d4c42",
+      "name": "Log Execution End",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3904,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "0674f8b6-7745-4f1a-af08-6931f65a792e",
+      "name": "Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        4064,
+        176
+      ]
+    }
+  ],
+  "connections": {
+    "Invoice Trigger": {
+      "main": [
+        [
+          {
+            "node": "Log Execution Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution Start": {
+      "main": [
+        [
+          {
+            "node": "Extract Invoice Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Invoice Context": {
+      "main": [
+        [
+          {
+            "node": "Extract Document Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Document Text": {
+      "main": [
+        [
+          {
+            "node": "Validate Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Extraction": {
+      "main": [
+        [
+          {
+            "node": "Parse Invoice Fields (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Invoice Fields (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Build Invoice Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Invoice Record": {
+      "main": [
+        [
+          {
+            "node": "Store Invoice Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Invoice Result": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution End": {
+      "main": [
+        [
+          {
+            "node": "Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "422e47ab-47fd-47a3-b7a6-1b642adf1c46",
+  "activeVersionId": null,
+  "versionCounter": 43,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-14T12:59:44.645Z",
+      "createdAt": "2026-03-14T12:59:44.645Z",
+      "role": "workflow:owner",
+      "workflowId": "AZiKzfqtZIPYtVh4",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

@@ -1,0 +1,71 @@
+INFO:     Started server process [14796]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-04-12 12:07:01,221 INFO httpx HTTP Request: GET http://localhost:5678/healthz "HTTP/1.1 200 OK"
+2026-04-12 12:08:09,983 INFO office_automation.orchestration Creating execution log | context={'user_email': 'test@example.com', 'module': 'hr', 'status': 'created'}
+2026-04-12 12:08:09,999 INFO office_automation.orchestration Execution log created | context={'request_id': '768fae9e-fe74-4b9a-8d28-e78308d6ed8d', 'module': 'hr'}
+2026-04-12 12:08:10,003 INFO office_automation.orchestration Updating execution log | context={'request_id': '768fae9e-fe74-4b9a-8d28-e78308d6ed8d', 'status': 'triggering', 'output_summary_included': True, 'input_payload_included': False}
+2026-04-12 12:08:10,049 INFO office_automation.orchestration Calling external HTTP endpoint | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 1}
+2026-04-12 12:08:10,113 INFO httpx HTTP Request: POST http://localhost:5678/webhook/execute-workflow "HTTP/1.1 404 Not Found"
+2026-04-12 12:08:10,114 WARNING office_automation.orchestration External HTTP call failed | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 1, 'error_type': 'HTTPStatusError', 'error': "Client error '404 Not Found' for url 'http://localhost:5678/webhook/execute-workflow'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"}
+2026-04-12 12:08:10,620 INFO office_automation.orchestration Calling external HTTP endpoint | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 2}
+2026-04-12 12:08:10,646 INFO httpx HTTP Request: POST http://localhost:5678/webhook/execute-workflow "HTTP/1.1 404 Not Found"
+2026-04-12 12:08:10,651 WARNING office_automation.orchestration External HTTP call failed | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 2, 'error_type': 'HTTPStatusError', 'error': "Client error '404 Not Found' for url 'http://localhost:5678/webhook/execute-workflow'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"}
+2026-04-12 12:08:11,674 INFO office_automation.orchestration Calling external HTTP endpoint | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 3}
+2026-04-12 12:08:11,700 INFO httpx HTTP Request: POST http://localhost:5678/webhook/execute-workflow "HTTP/1.1 404 Not Found"
+2026-04-12 12:08:11,702 WARNING office_automation.orchestration External HTTP call failed | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 3, 'error_type': 'HTTPStatusError', 'error': "Client error '404 Not Found' for url 'http://localhost:5678/webhook/execute-workflow'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"}
+2026-04-12 12:08:11,703 ERROR office_automation.orchestration Failed to trigger HR execute workflow | context={'request_id': '768fae9e-fe74-4b9a-8d28-e78308d6ed8d', 'n8n_url': 'http://localhost:5678/webhook/execute-workflow'}
+Traceback (most recent call last):
+  File "C:\Users\danis\Office_automation\routers\hr_execute.py", line 549, in hr_execute
+    response = await post_with_retry(
+               ^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "C:\Users\danis\Office_automation\orchestration.py", line 251, in post_with_retry
+    raise RuntimeError(f"HTTP POST failed after {attempts} attempts: {last_error}")
+RuntimeError: HTTP POST failed after 3 attempts: Client error '404 Not Found' for url 'http://localhost:5678/webhook/execute-workflow'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+2026-04-12 12:08:11,742 INFO office_automation.orchestration Updating execution log | context={'request_id': '768fae9e-fe74-4b9a-8d28-e78308d6ed8d', 'status': 'failed_to_trigger', 'output_summary_included': True, 'input_payload_included': False}
+2026-04-12 12:10:40,103 INFO office_automation.orchestration Creating execution log | context={'user_email': 'test@example.com', 'module': 'hr', 'status': 'created'}
+2026-04-12 12:10:40,117 INFO office_automation.orchestration Execution log created | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'module': 'hr'}
+2026-04-12 12:10:40,126 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'triggering', 'output_summary_included': True, 'input_payload_included': False}
+2026-04-12 12:10:40,184 INFO office_automation.orchestration Calling external HTTP endpoint | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 1}
+2026-04-12 12:10:40,421 INFO httpx HTTP Request: POST http://localhost:5678/webhook/execute-workflow "HTTP/1.1 200 OK"
+2026-04-12 12:10:40,424 INFO office_automation.orchestration External HTTP call succeeded | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 1, 'status_code': 200}
+2026-04-12 12:10:40,428 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'running', 'output_summary_included': True, 'input_payload_included': False}
+2026-04-12 12:10:40,890 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'ranked', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:10:40,999 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'shortlisted', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:10:41,140 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'shortlisted', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:10:41,237 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'shortlisted', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:10:41,321 INFO office_automation.orchestration Updating execution log | context={'request_id': '339ea237-7316-4330-99f5-4a94461d3e15', 'status': 'completed', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:13:09,488 INFO httpx HTTP Request: GET http://localhost:5678/healthz "HTTP/1.1 200 OK"
+2026-04-12 12:13:09,831 INFO office_automation.orchestration Creating execution log | context={'user_email': 'test@example.com', 'module': 'hr', 'status': 'created'}
+2026-04-12 12:13:09,843 INFO office_automation.orchestration Execution log created | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'module': 'hr'}
+2026-04-12 12:13:09,847 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'triggering', 'output_summary_included': True, 'input_payload_included': False}
+2026-04-12 12:13:09,882 INFO office_automation.orchestration Calling external HTTP endpoint | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 1}
+2026-04-12 12:13:10,031 INFO httpx HTTP Request: POST http://localhost:5678/webhook/execute-workflow "HTTP/1.1 200 OK"
+2026-04-12 12:13:10,032 INFO office_automation.orchestration External HTTP call succeeded | context={'url': 'http://localhost:5678/webhook/execute-workflow', 'attempt': 1, 'status_code': 200}
+2026-04-12 12:13:10,037 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'running', 'output_summary_included': True, 'input_payload_included': False}
+2026-04-12 12:13:10,116 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'ranked', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:13:10,181 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'shortlisted', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:13:10,249 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'shortlisted', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:13:10,315 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'shortlisted', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:13:10,381 INFO office_automation.orchestration Updating execution log | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'status': 'completed', 'output_summary_included': True, 'input_payload_included': True}
+2026-04-12 12:13:25,925 INFO office_automation.orchestration Fetching n8n executions | context={'url': 'http://localhost:5678/rest/executions', 'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523', 'auth_modes': ['x-api-key', 'bearer']}
+2026-04-12 12:13:26,004 INFO httpx HTTP Request: GET http://localhost:5678/rest/executions "HTTP/1.1 401 Unauthorized"
+2026-04-12 12:13:26,009 WARNING office_automation.orchestration n8n execution lookup unauthorized; retrying with fallback auth | context={'url': 'http://localhost:5678/rest/executions', 'auth_mode': 'x-api-key'}
+2026-04-12 12:13:26,021 INFO httpx HTTP Request: GET http://localhost:5678/rest/executions "HTTP/1.1 401 Unauthorized"
+2026-04-12 12:13:26,023 ERROR office_automation.orchestration Failed to fetch n8n executions | context={'request_id': 'b81a22b0-cd32-426a-b9ef-033c9ad31523'}
+Traceback (most recent call last):
+  File "C:\Users\danis\Office_automation\routers\internal.py", line 329, in get_n8n_execution
+    return await get_n8n_executions_for_request(request_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\danis\Office_automation\orchestration.py", line 280, in get_n8n_executions_for_request
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\danis\Office_automation\.venv\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:5678/rest/executions'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401

@@ -1,0 +1,239 @@
+{
+  "updatedAt": "2026-03-11T12:48:15.748Z",
+  "createdAt": "2026-03-11T07:52:19.720Z",
+  "id": "7bbdb7df-273b-4c0a-8bae-8b590ba8cc53",
+  "name": "HR Operations Agent Chat (Experimental)",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Hi there!\nI can list scheduled interviews, summarize the latest HR execution, check readiness, or reschedule an interview.",
+        "options": {
+          "allowedOrigins": "*",
+          "inputPlaceholder": "Ask about interviews or request a reschedule",
+          "responseMode": "streaming"
+        }
+      },
+      "id": "cbd8e738-b6a0-5be6-b79b-2db7ff13dc1b",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -352,
+        0
+      ],
+      "webhookId": "fb3ac46e-4f54-51bb-b6fd-66101bd8c678"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are an operations agent for a workflow automation platform.\nUse tools for all factual answers about executions, schedules, readiness, or interview changes.\nAvailable tools are: list_latest_hr_execution, summarize_hr_execution, run_hr_readiness_check, reschedule_hr_interview.\nDo not invent calendar events, candidate records, or execution results.\nIf the user asks to reschedule an interview, call reschedule_hr_interview.\nFor reschedule_hr_interview, only pass candidate_email and datetime, plus optional request_id, workflow_type, timezone, or calendar_account.\nDo not pass candidate_name or requested_datetime to that tool.\nIf the user gives only a candidate name, first call list_latest_hr_execution or summarize_hr_execution to identify the candidate_email, then call reschedule_hr_interview.\nIf a tool reports failure or ambiguity, explain it directly and ask for the missing email, request_id, or time.",
+          "maxIterations": 10,
+          "returnIntermediateSteps": false,
+          "passthroughBinaryImages": false,
+          "enableStreaming": true
+        }
+      },
+      "id": "9fb9cbba-e0e5-530d-9937-b28ed946af2b",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "maxTokensToSample": 2048,
+          "temperature": 0.1
+        }
+      },
+      "id": "df391b25-9e28-59a0-a1f2-920024cfa6db",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        224,
+        304
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "pY7tpr36s9Nuwylm",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Use this to list the scheduled interviews and tasks from the latest HR execution. Accepts optional request_id and workflow_type.",
+        "source": "parameter",
+        "workflowJson": "{\n  \"name\": \"list_latest_hr_execution\",\n  \"nodes\": [\n    {\n      \"parameters\": {\n        \"inputSource\": \"workflowInputs\",\n        \"workflowInputs\": {\n          \"values\": [\n            {\n              \"name\": \"request_id\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"workflow_type\",\n              \"type\": \"string\"\n            }\n          ]\n        }\n      },\n      \"id\": \"b2ba1d10-c5ef-5480-8081-b89b98d9bed7\",\n      \"name\": \"When Executed by Another Workflow\",\n      \"type\": \"n8n-nodes-base.executeWorkflowTrigger\",\n      \"typeVersion\": 1.1,\n      \"position\": [\n        -320,\n        0\n      ]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"http://backend:8000/api/agent-tools/hr/interviews\",\n        \"options\": {\n          \"timeout\": 30000\n        },\n        \"sendBody\": true,\n        \"bodyParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"request_id\",\n              \"value\": \"={{ $json.request_id || null }}\"\n            },\n            {\n              \"name\": \"workflow_type\",\n              \"value\": \"={{ $json.workflow_type || 'hr_recruitment' }}\"\n            }\n          ]\n        }\n      },\n      \"id\": \"3b2b97e9-4244-5876-96c9-34b58ed45571\",\n      \"name\": \"Call Backend Tool\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.3,\n      \"position\": [\n        32,\n        0\n      ]\n    }\n  ],\n  \"connections\": {\n    \"When Executed by Another Workflow\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Call Backend Tool\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"meta\": {\n    \"templateCredsSetupCompleted\": true\n  },\n  \"pinData\": {},\n  \"versionId\": \"545b8f5d-40c6-57bd-afe3-76bd31bb8cf9\"\n}"
+      },
+      "id": "824ef275-c070-52ac-950e-88784b8c6bcf",
+      "name": "list_latest_hr_execution",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        224,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Use this to summarize the latest HR execution. Accepts optional request_id and workflow_type.",
+        "source": "parameter",
+        "workflowJson": "{\n  \"name\": \"summarize_hr_execution\",\n  \"nodes\": [\n    {\n      \"parameters\": {\n        \"inputSource\": \"workflowInputs\",\n        \"workflowInputs\": {\n          \"values\": [\n            {\n              \"name\": \"request_id\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"workflow_type\",\n              \"type\": \"string\"\n            }\n          ]\n        }\n      },\n      \"id\": \"454bf6db-0d05-5f20-bd8a-dd8745f91339\",\n      \"name\": \"When Executed by Another Workflow\",\n      \"type\": \"n8n-nodes-base.executeWorkflowTrigger\",\n      \"typeVersion\": 1.1,\n      \"position\": [\n        -320,\n        0\n      ]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"http://backend:8000/api/agent-tools/hr/summary\",\n        \"options\": {\n          \"timeout\": 30000\n        },\n        \"sendBody\": true,\n        \"bodyParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"request_id\",\n              \"value\": \"={{ $json.request_id || null }}\"\n            },\n            {\n              \"name\": \"workflow_type\",\n              \"value\": \"={{ $json.workflow_type || 'hr_recruitment' }}\"\n            }\n          ]\n        }\n      },\n      \"id\": \"3b2b97e9-4244-5876-96c9-34b58ed45571\",\n      \"name\": \"Call Backend Tool\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.3,\n      \"position\": [\n        32,\n        0\n      ]\n    }\n  ],\n  \"connections\": {\n    \"When Executed by Another Workflow\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Call Backend Tool\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"meta\": {\n    \"templateCredsSetupCompleted\": true\n  },\n  \"pinData\": {},\n  \"versionId\": \"92cdf6e5-1d88-59e5-a0d0-63b9bb9b4e6e\"\n}"
+      },
+      "id": "f5aeab57-3005-54dd-a6f1-158152a5d41c",
+      "name": "summarize_hr_execution",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        416,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Use this to check whether the HR workflow is ready for live testing.",
+        "source": "parameter",
+        "workflowJson": "{\n  \"name\": \"run_hr_readiness_check\",\n  \"nodes\": [\n    {\n      \"parameters\": {\n        \"inputSource\": \"jsonExample\",\n        \"jsonExample\": \"{}\"\n      },\n      \"id\": \"df89458d-2f45-5984-957a-4bb1d21c7725\",\n      \"name\": \"When Executed by Another Workflow\",\n      \"type\": \"n8n-nodes-base.executeWorkflowTrigger\",\n      \"typeVersion\": 1.1,\n      \"position\": [\n        -320,\n        0\n      ]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"GET\",\n        \"url\": \"http://backend:8000/api/agent-tools/hr/readiness\",\n        \"options\": {\n          \"timeout\": 30000\n        }\n      },\n      \"id\": \"3b2b97e9-4244-5876-96c9-34b58ed45571\",\n      \"name\": \"Call Backend Tool\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.3,\n      \"position\": [\n        32,\n        0\n      ]\n    }\n  ],\n  \"connections\": {\n    \"When Executed by Another Workflow\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Call Backend Tool\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"meta\": {\n    \"templateCredsSetupCompleted\": true\n  },\n  \"pinData\": {},\n  \"versionId\": \"d692dbcf-58af-58ed-a925-ff31d09e9bc8\"\n}"
+      },
+      "id": "8f969dcf-2f72-5da9-aaad-a47ff7d152b3",
+      "name": "run_hr_readiness_check",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        608,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Use this to reschedule an interview. Input candidate_email and datetime only. Optional: request_id, workflow_type, timezone, calendar_account. If you only know the candidate name, first use another tool to find the email.",
+        "source": "parameter",
+        "workflowJson": "{\n  \"name\": \"reschedule_hr_interview\",\n  \"nodes\": [\n    {\n      \"parameters\": {\n        \"inputSource\": \"workflowInputs\",\n        \"workflowInputs\": {\n          \"values\": [\n            {\n              \"name\": \"request_id\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"workflow_type\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"candidate_email\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"datetime\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"timezone\",\n              \"type\": \"string\"\n            },\n            {\n              \"name\": \"calendar_account\",\n              \"type\": \"string\"\n            }\n          ]\n        }\n      },\n      \"id\": \"f4b51f38-a4be-5756-8beb-5f4003fa40b5\",\n      \"name\": \"When Executed by Another Workflow\",\n      \"type\": \"n8n-nodes-base.executeWorkflowTrigger\",\n      \"typeVersion\": 1.1,\n      \"position\": [\n        -320,\n        0\n      ]\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"http://backend:8000/api/agent-tools/hr/reschedule\",\n        \"options\": {\n          \"timeout\": 30000\n        },\n        \"sendBody\": true,\n        \"bodyParameters\": {\n          \"parameters\": [\n            {\n              \"name\": \"request_id\",\n              \"value\": \"={{ $json.request_id || null }}\"\n            },\n            {\n              \"name\": \"workflow_type\",\n              \"value\": \"={{ $json.workflow_type || 'hr_recruitment' }}\"\n            },\n            {\n              \"name\": \"candidate_email\",\n              \"value\": \"={{ $json.candidate_email || null }}\"\n            },\n            {\n              \"name\": \"requested_datetime\",\n              \"value\": \"={{ $json.datetime || '' }}\"\n            },\n            {\n              \"name\": \"timezone\",\n              \"value\": \"={{ $json.timezone || 'Asia/Kolkata' }}\"\n            },\n            {\n              \"name\": \"calendar_account\",\n              \"value\": \"={{ $json.calendar_account || 'primary' }}\"\n            }\n          ]\n        }\n      },\n      \"id\": \"3b2b97e9-4244-5876-96c9-34b58ed45571\",\n      \"name\": \"Call Backend Tool\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.3,\n      \"position\": [\n        32,\n        0\n      ]\n    }\n  ],\n  \"connections\": {\n    \"When Executed by Another Workflow\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Call Backend Tool\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"meta\": {\n    \"templateCredsSetupCompleted\": true\n  },\n  \"pinData\": {},\n  \"versionId\": \"e630f37e-74f9-52fc-a604-3bd42f021d9b\"\n}"
+      },
+      "id": "4190a5ad-68cf-5875-98fa-c025f380c3eb",
+      "name": "reschedule_hr_interview",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        -224
+      ]
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list_latest_hr_execution": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "summarize_hr_execution": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "run_hr_readiness_check": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "reschedule_hr_interview": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "95769665-62ef-4ee2-b54d-12ffa942fb14",
+  "activeVersionId": null,
+  "versionCounter": 5,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-11T07:52:19.720Z",
+      "createdAt": "2026-03-11T07:52:19.720Z",
+      "role": "workflow:owner",
+      "workflowId": "7bbdb7df-273b-4c0a-8bae-8b590ba8cc53",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

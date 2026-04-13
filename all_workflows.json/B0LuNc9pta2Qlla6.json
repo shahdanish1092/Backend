@@ -1,0 +1,442 @@
+{
+  "updatedAt": "2026-03-21T17:42:10.000Z",
+  "createdAt": "2026-03-14T12:50:48.901Z",
+  "id": "B0LuNc9pta2Qlla6",
+  "name": "Automation Dispatcher",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dispatch",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b0cd4ba5-61f1-4cd5-a831-9253899d7838",
+      "name": "Webhook Dispatcher",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1488,
+        1392
+      ],
+      "webhookId": "295127fd-fab4-409f-b4a3-92b10e846834"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Automation Dispatcher\",\n  \"status\": \"started\",\n  \"request_id\": \"{{ $json.request_id || Date.now().toString() }}\",\n  \"submitted_at\": \"{{ $now.toISOString() }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "364293b5-f759-4360-8ece-3286a60d4d7b",
+      "name": "Log Execution Start",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1264,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "5cbf28b5-fc2f-4da8-a041-5cb911d87a68",
+      "name": "Extract Dispatch Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        -1040,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.automation_type }}",
+                    "rightValue": "resume",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.automation_type }}",
+                    "rightValue": "invoice",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.automation_type }}",
+                    "rightValue": "daily_summary",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "429bfa82-204d-4e37-aa45-851b0227e82e",
+      "name": "Switch by Automation Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -816,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_BASE_URL }}/webhook/resume-pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "beda777b-96d6-419a-98f4-3287f9d4e242",
+      "name": "Call Resume Pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -592,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_BASE_URL }}/webhook/invoice-pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "0162f8e7-97f1-4453-b668-8b60a9c8303d",
+      "name": "Call Invoice Pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -592,
+        1392
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_BASE_URL }}/webhook/daily-summary-pipeline",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "79921edc-4b64-480a-b70e-237b4c642fe8",
+      "name": "Call Daily Summary Pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -592,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e5a1ddc4-2504-4513-8b33-8ae5acb29d46",
+      "name": "Handle Unknown Type",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -592,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-executions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workflow_type\": \"Automation Dispatcher\",\n  \"status\": \"{{ $json.status || 'success' }}\",\n  \"request_id\": \"{{ $json.request_id }}\",\n  \"completed_at\": \"{{ $now.toISOString() }}\",\n  \"error\": \"{{ $json.error || '' }}\",\n  \"summary\": \"{{ $json.summary || 'Dispatch completed' }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "62c29b71-70e3-4c2e-bc95-727c77a2cb4b",
+      "name": "Log Execution End",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -368,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "8f027ea7-e044-4569-a04d-98a87c049562",
+      "name": "Respond Dispatch Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        1488
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Dispatcher": {
+      "main": [
+        [
+          {
+            "node": "Log Execution Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution Start": {
+      "main": [
+        [
+          {
+            "node": "Extract Dispatch Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Dispatch Context": {
+      "main": [
+        [
+          {
+            "node": "Switch by Automation Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch by Automation Type": {
+      "main": [
+        [
+          {
+            "node": "Call Resume Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Invoice Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Daily Summary Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Resume Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Invoice Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Daily Summary Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Unknown Type": {
+      "main": [
+        [
+          {
+            "node": "Log Execution End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution End": {
+      "main": [
+        [
+          {
+            "node": "Respond Dispatch Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "7888891b-261d-41a6-8e46-32e30b456136",
+  "activeVersionId": null,
+  "versionCounter": 97,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-14T12:50:48.916Z",
+      "createdAt": "2026-03-14T12:50:48.916Z",
+      "role": "workflow:owner",
+      "workflowId": "B0LuNc9pta2Qlla6",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

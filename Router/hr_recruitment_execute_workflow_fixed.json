@@ -1,0 +1,157 @@
+{
+  "name": "HR Recruitment Executor (fixed)",
+  "nodes": [
+    {
+      "id": "webhook1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [220, 260],
+      "parameters": {
+        "path": "execute-workflow",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "responseMessage": "Workflow was started"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "extract-context",
+      "name": "Extract Context",
+      "type": "n8n-nodes-base.set",
+      "position": [470, 260],
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "request_id", "value": "={{ $json.body.request_id }}" },
+            { "name": "workflow_type", "value": "={{ $json.body.workflow_type }}" },
+            { "name": "user_email", "value": "={{ $json.body.payload?.user_email || $json.body.user_email || '' }}" },
+            { "name": "callback_url", "value": "={{ $json.body.callback_url }}" },
+            { "name": "criteria", "value": "={{ $json.body.payload?.criteria || '' }}" },
+            { "name": "top_k", "value": "={{ $json.body.payload?.top_k || 1 }}" },
+            {
+              "name": "extracted_text",
+              "value": "={{ $json.body.payload?.extracted_text || $json.body.payload?.email_data?.body || $json.body.payload?.email_data?.subject || '' }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "rank-candidates",
+      "name": "Rank Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [760, 260],
+      "parameters": {
+        "url": "={{ ($env.FASTAPI_BASE_URL || 'http://host.docker.internal:8000') + '/api/rank/candidates' }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request_id: $json.request_id, workflow_type: $json.workflow_type, extracted_text: $json.extracted_text, criteria: $json.criteria || '', ranking_logic: 'weighted_scoring', candidates: [] }) }}"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "shortlist",
+      "name": "Shortlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 260],
+      "parameters": {
+        "url": "={{ ($env.FASTAPI_BASE_URL || 'http://host.docker.internal:8000') + '/api/shortlist/candidates' }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request_id: $json.body?.request_id || $json.request_id, ranked_candidates: $json.body?.ranked_candidates || $json.ranked_candidates || [], top_k: Number($item(0).$node['Extract Context'].json.top_k || 1), timezone: 'UTC', working_hours_start: '09:00', working_hours_end: '17:00', slot_duration_minutes: 30, slot_gap_minutes: 15, use_calendar_freebusy: false, freebusy_lookahead_days: 14, calendar_account: 'primary' }) }}"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "extract-shortlisted-candidate",
+      "name": "Extract Shortlisted Candidate",
+      "type": "n8n-nodes-base.set",
+      "position": [1330, 260],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "candidate_name",
+              "value": "={{ $json.body?.shortlisted?.[0]?.candidate_name || $json.shortlisted?.[0]?.candidate_name || '' }}"
+            },
+            {
+              "name": "candidate_email",
+              "value": "={{ $json.body?.shortlisted?.[0]?.candidate_email || $json.shortlisted?.[0]?.candidate_email || '' }}"
+            },
+            {
+              "name": "start_time",
+              "value": "={{ $json.body?.shortlisted?.[0]?.metadata?.interview_start || $json.shortlisted?.[0]?.metadata?.interview_start || '' }}"
+            },
+            {
+              "name": "end_time",
+              "value": "={{ $json.body?.shortlisted?.[0]?.metadata?.interview_end || $json.shortlisted?.[0]?.metadata?.interview_end || '' }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "create-calendar-event",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1630, 260],
+      "parameters": {
+        "url": "={{ ($env.FASTAPI_BASE_URL || 'http://host.docker.internal:8000') + '/api/create-calendar-event' }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request_id: $item(0).$node['Extract Context'].json.request_id, candidate_name: $json.candidate_name || '', candidate_email: $json.candidate_email || '', start_time: $json.start_time || '', end_time: $json.end_time || '', step_id: 'schedule_interviews', user_email: $item(0).$node['Extract Context'].json.user_email || '', metadata: { source: 'hr_recruitment_execute_workflow_fixed' } }) }}"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1910, 260],
+      "parameters": {
+        "url": "={{ ($env.FASTAPI_BASE_URL || 'http://host.docker.internal:8000') + '/api/send-email' }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request_id: $item(0).$node['Extract Context'].json.request_id, candidate_email: $item(0).$node['Extract Shortlisted Candidate'].json.candidate_email || '', candidate_name: $item(0).$node['Extract Shortlisted Candidate'].json.candidate_name || '', subject: 'Interview update', body: 'Your application has been shortlisted.', step_id: 'send_emails', user_email: $item(0).$node['Extract Context'].json.user_email || '', metadata: { source: 'hr_recruitment_execute_workflow_fixed' } }) }}"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "execution-callback",
+      "name": "Execution Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2190, 260],
+      "parameters": {
+        "url": "={{ $item(0).$node['Extract Context'].json.callback_url }}",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request_id: $item(0).$node['Extract Context'].json.request_id, workflow_type: $item(0).$node['Extract Context'].json.workflow_type, status: 'completed', results: $item(0).$node['Shortlist'].json.body?.shortlisted || $item(0).$node['Shortlist'].json.shortlisted || [], metadata: { user_email: $item(0).$node['Extract Context'].json.user_email || '', source: 'hr_recruitment_execute_workflow_fixed' } }) }}"
+      },
+      "typeVersion": 4.2
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Extract Context", "type": "main", "index": 0 }]] },
+    "Extract Context": { "main": [[{ "node": "Rank Candidates", "type": "main", "index": 0 }]] },
+    "Rank Candidates": { "main": [[{ "node": "Shortlist", "type": "main", "index": 0 }]] },
+    "Shortlist": { "main": [[{ "node": "Extract Shortlisted Candidate", "type": "main", "index": 0 }]] },
+    "Extract Shortlisted Candidate": { "main": [[{ "node": "Create Calendar Event", "type": "main", "index": 0 }]] },
+    "Create Calendar Event": { "main": [[{ "node": "Send Email", "type": "main", "index": 0 }]] },
+    "Send Email": { "main": [[{ "node": "Execution Callback", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "hr_recruitment_fixed_v3"
+}

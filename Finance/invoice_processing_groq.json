@@ -1,0 +1,142 @@
+{
+  "id": "zZWPMtZ0TNebe1fI-groq",
+  "meta": {
+    "instanceId": "zZWPMtZ0TNebe1fI-groq"
+  },
+  "name": "Automate Invoice Processing from Gmail with Groq Llama and Human Verification",
+  "tags": [],
+  "nodes": [
+    {
+      "id": "a6fd1034-16ac-48ce-a20e-5d00f9709d76",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "position": [40,220],
+      "parameters": { "simple": false, "filters": { "sender": "user@example.com" }, "options": { "downloadAttachments": true }, "pollTimes": { "item": [ { "mode": "everyMinute" } ] } },
+      "credentials": { "gmailOAuth2": { "id": "credential-id", "name": "gmailOAuth2 Credential" } },
+      "typeVersion": 1
+    },
+    {
+      "id": "861f5008-bd46-4091-b040-b7b2fe1e6f45",
+      "name": "Is this PDF?",
+      "type": "n8n-nodes-base.if",
+      "position": [260,220],
+      "parameters": { "conditions": { "string": [ { "value1": "={{ $json.subject }}", "value2": "Invoice", "operation": "contains" }, { "value1": "={{ $binary.attachment_0 }}", "operation": "isNotEmpty" } ] } },
+      "typeVersion": 1,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "e577ce73-0505-45f0-80cb-aa6d241f1add",
+      "name": "Information Extractor",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "onError": "continueErrorOutput",
+      "position": [660,280],
+      "parameters": {
+        "text": "={{ $json.text }}",
+        "options": { "systemPromptTemplate": "You are an expert reviewing invoices. Analyze the texts and say if it is an invoice. Just answer 'Yes' or 'No'" },
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n     \"properties\": {\n       \"topic\": { \"type\": \"string\" },\n       \"insights\": {\n         \"type\": \"array\",\n         \"items\": {\n           \"type\": \"object\",\n           \"properties\": {\n             \"title\": { \"type\": \"string\" },\n             \"body\": { \"type\": \"string\" }\n           }\n         }\n       }\n     }\n  }\n}"
+      },
+      "typeVersion": 1.2,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "0a17eed9-be81-4576-b218-ad12b3ffac28",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "position": [1480,220],
+      "parameters": { "mode": "chooseBranch" },
+      "retryOnFail": false,
+      "typeVersion": 3.2
+    },
+    {
+      "id": "14933a59-1cd2-4572-aa92-8968ffa03b8a",
+      "name": "Save PDF Locally",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "position": [1640,220],
+      "parameters": { "options": {}, "fileName": "=C:/Test/Invoices/invoice_{{ $now.toFormat('yyyyLLdd_HHmmss') }}.pdf", "dataPropertyName": "attachment_0" },
+      "typeVersion": 1
+    },
+    {
+      "id": "ba5b7574-a2e1-401e-aab0-c7ca6b7856d8",
+      "name": "Groq Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "position": [660,440],
+      "parameters": { "model": "llama3-70b-8192", "options": {} },
+      "typeVersion": 1
+    },
+    {
+      "id": "3b021445-e52e-4191-a454-654ba26e1bba",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "position": [460,440],
+      "parameters": { "errorMessage": "There is no pdf file!" },
+      "typeVersion": 1
+    },
+    {
+      "id": "e23bf999-1718-4489-a308-e244b22e14ad",
+      "name": "Send a message",
+      "type": "n8n-nodes-base.gmail",
+      "position": [1020,480],
+      "webhookId": "aaafea40-4fcd-4775-82bf-5302914a681b",
+      "parameters": { "sendTo": "user@example.com", "message": "I had trouble parsing the recent invoice. Can you please confirm that it is an invoice?", "options": { "appendAttribution": false }, "subject": "Approval Required!", "operation": "sendAndWait", "approvalOptions": { "values": { "approvalType": "double" } } },
+      "credentials": { "gmailOAuth2": { "id": "credential-id", "name": "gmailOAuth2 Credential" } },
+      "typeVersion": 2.1
+    },
+    {
+      "id": "send-result-fastapi-0001",
+      "name": "Send Result to FastAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [900,340],
+      "parameters": {
+        "url": "= {{$env.FASTAPI_BASE_URL}}/api/internal/invoice-result",
+        "method": "POST",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"invoice_id\": \"={{$now.toMillis()}}\",\n  \"user_email\": \"={{$json.user_email}}\",\n  \"vendor_name\": \"={{$json.vendor_name}}\",\n  \"invoice_number\": \"={{$json.invoice_number}}\",\n  \"amount\": ={{$json.amount}},\n  \"invoice_date\": \"={{$json.invoice_date}}\",\n  \"line_items\": ={{$json.line_items}}\n}"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "f589f451-3faf-4930-ab12-4796f219d066",
+      "name": "Sticky Note5",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [0,0],
+      "parameters": { "width": 400, "height": 100, "content": "## Use this to automatically save invoice received in an email" },
+      "typeVersion": 1
+    },
+    {
+      "id": "42973f72-4ce9-4fff-90e5-9a09cc68f39b",
+      "name": "Manual Verification",
+      "type": "n8n-nodes-base.gmail",
+      "position": [1200,340],
+      "webhookId": "69f41f8b-bad8-4fe6-83db-b46e64f10e7f",
+      "parameters": { "sendTo": "user@example.com", "message": "The latest invoice does not seem to be legit. Please verify it manually.", "options": { "appendAttribution": false }, "subject": "Manual Verification Required" },
+      "credentials": { "gmailOAuth2": { "id": "credential-id", "name": "gmailOAuth2 Credential" } },
+      "typeVersion": 2.1
+    },
+    {
+      "id": "bc2a8732-2e5f-421b-8df1-37a6ec2f7a2e",
+      "name": "Invoice Saved Message",
+      "type": "n8n-nodes-base.gmail",
+      "position": [1800,220],
+      "webhookId": "aaafea40-4fcd-4775-82bf-5302914a681b",
+      "parameters": { "sendTo": "user@example.com", "message": "=Hi there,\nInvoice '{{ $json.subject }}' from \"{{ $json.from.value[0].name }}\" has been saved successfully in your Local Folder!\n\n", "options": { "appendAttribution": false }, "subject": "=Invoice Downloaded" },
+      "credentials": { "gmailOAuth2": { "id": "credential-id", "name": "gmailOAuth2 Credential" } },
+      "typeVersion": 2.1
+    }
+  ],
+  "active": false,
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "versionId": "invoice_processing_groq_v1",
+  "connections": {
+    "Merge": { "main": [ [ { "node": "Save PDF Locally", "type": "main", "index": 0 } ] ] },
+    "Is this PDF?": { "main": [ [ { "node": "Merge", "type": "main", "index": 0 }, { "node": "Information Extractor", "type": "main", "index": 0 } ], [ { "node": "Error Handler", "type": "main", "index": 0 } ] ] },
+    "Gmail Trigger": { "main": [ [ { "node": "Is this PDF?", "type": "main", "index": 0 } ] ] },
+    "IF: AI Says Yes": { "main": [ [ { "node": "Merge", "type": "main", "index": 1 } ], [ { "node": "Manual Verification", "type": "main", "index": 0 } ] ] },
+    "Save PDF Locally": { "main": [ [ { "node": "Invoice Saved Message", "type": "main", "index": 0 } ] ] },
+    "Information Extractor": { "main": [ [ { "node": "IF: AI Says Yes", "type": "main", "index": 0 } ], [ { "node": "Send a message", "type": "main", "index": 0 } ], [ { "node": "Send Result to FastAPI", "type": "main", "index": 0 } ] ] },
+    "Groq Chat Model": { "ai_languageModel": [ [ { "node": "Information Extractor", "type": "ai_languageModel", "index": 0 } ] ] }
+  }
+}

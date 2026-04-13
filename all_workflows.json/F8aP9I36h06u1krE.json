@@ -1,0 +1,1403 @@
+{
+  "updatedAt": "2026-04-11T13:48:26.242Z",
+  "createdAt": "2026-03-09T17:20:42.384Z",
+  "id": "F8aP9I36h06u1krE",
+  "name": "AI-Workflow-Compiler (Backend Orchestrated)",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "execute-workflow",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        2384,
+        -768
+      ],
+      "id": "17e3bc03-36e8-4946-8f67-79649d45c509",
+      "name": "Webhook",
+      "webhookId": "e30fc530-93c6-4810-aaaf-3cc1f4fcd00e"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "steps",
+        "include": "allOtherFields",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2832,
+        -768
+      ],
+      "id": "5d69967a-f584-4cd0-8ecd-d1c8abac7cff",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2a8fc856-00ae-4127-8939-f956478c9f2c",
+              "leftValue": "={{$json.enabled}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3280,
+        -768
+      ],
+      "id": "2ebeb876-ddbb-42eb-a007-164d4e0864bd",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.step_id.trim()}}",
+                    "rightValue": "extract_text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "528e20e9-0031-4560-a623-5235c75a80b3"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "53da6929-03ca-4fe2-8ee8-e48a7b912b89",
+                    "leftValue": "={{$json.step_id.trim()}}",
+                    "rightValue": "rank_candidates",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a58fac56-a103-4c28-8a50-0b8ab57a32f4",
+                    "leftValue": "={{$json.step_id.trim()}}",
+                    "rightValue": "shortlist",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "afacf3ba-138c-44ee-8cfa-58cbe9aea55b",
+                    "leftValue": "={{$json.step_id.trim()}}",
+                    "rightValue": "send_emails",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "99bceb7f-a107-434b-963b-ee87a4ab9eed",
+                    "leftValue": "={{$json.step_id.trim()}}",
+                    "rightValue": "schedule_interviews",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "62100430-f887-4543-9f93-95a1e2821236",
+                    "leftValue": "=={{true}}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        3504,
+        -832
+      ],
+      "id": "e0a4486b-07f6-4edd-b654-017738eb951c",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "numberInputs": 6
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        6864,
+        -832
+      ],
+      "id": "d3baab72-c1fa-40db-8f65-17a806bc3058",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $node[\"Extract context\"].json;\nconst results = $input.all().map(i => i.json).filter(Boolean);\n\nreturn [{\n  json: {\n    request_id: String(ctx.request_id || \"\").replace(/^=/, \"\"),\n    workflow_type: ctx.workflow_type || null,\n    status: \"executed\",\n    results,\n    metadata: {\n      source: \"n8n\",\n      execution_id: $execution.id,\n      result_count: results.length\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7088,
+        -768
+      ],
+      "id": "16a30e26-97e0-4c7c-8415-fa33fb718d5a",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        7536,
+        -768
+      ],
+      "id": "1c1007ae-922f-4542-9e7f-4c62d1dd4fd9",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f15635e8-2820-4d14-b687-f99793cb0894",
+              "name": "request_id",
+              "value": "={{$json.body.request_id}}",
+              "type": "string"
+            },
+            {
+              "id": "6d52d901-b292-4778-879c-a7424b026827",
+              "name": "workflow_type",
+              "value": "={{$json.body.workflow_type}}",
+              "type": "string"
+            },
+            {
+              "id": "1f4a7fee-7e4c-454d-b090-ceee1c534481",
+              "name": "steps",
+              "value": "={{$json.body.execution_plan.steps}}",
+              "type": "array"
+            },
+            {
+              "id": "5ec89500-d3e8-4adb-98ca-85f03c83d117",
+              "name": "callback_url",
+              "value": "={{$json.body.callback_url}}",
+              "type": "string"
+            },
+            {
+              "id": "trigger-context-assignment",
+              "name": "trigger_context",
+              "value": "={{ $json.body.trigger_context }}",
+              "type": "object"
+            },
+            {
+              "id": "callback-auth-assignment",
+              "name": "callback_auth",
+              "value": "={{ $json.body.callback_auth }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2608,
+        -768
+      ],
+      "id": "03dc920e-4c20-4798-9253-078610071549",
+      "name": "Extract context"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d48a0b66-68cd-4e48-a3c2-0edf77360f07",
+              "name": "=request_id",
+              "value": "={{$json.request_id}}",
+              "type": "string"
+            },
+            {
+              "id": "e4d0248a-3bd6-48bf-b522-dd84975d0379",
+              "name": "workflow_type",
+              "value": "={{$json.workflow_type}}",
+              "type": "string"
+            },
+            {
+              "id": "b13f3f68-62b5-43ca-a4e9-9174c946ec7c",
+              "name": "step_id",
+              "value": "={{$json.steps.step_id}}",
+              "type": "string"
+            },
+            {
+              "id": "f7130a8c-856a-41b0-8b66-476a82ea6229",
+              "name": "enabled",
+              "value": "={{$json.steps.enabled == true}}",
+              "type": "boolean"
+            },
+            {
+              "id": "ede91178-6830-4339-9a89-5e2cf6e94643",
+              "name": "params",
+              "value": "={{$json.steps.params}}",
+              "type": "object"
+            },
+            {
+              "id": "flatten-trigger-context",
+              "name": "trigger_context",
+              "value": "={{ $json.trigger_context }}",
+              "type": "object"
+            },
+            {
+              "id": "flatten-callback-url",
+              "name": "callback_url",
+              "value": "={{$json.callback_url || \"\"}}",
+              "type": "string"
+            },
+            {
+              "id": "flatten-callback-auth",
+              "name": "callback_auth",
+              "value": "={{ $json.callback_auth }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3056,
+        -768
+      ],
+      "id": "8d1b0958-381a-46ae-a3b2-713c8a694087",
+      "name": "Flatten Step"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/execution-callback",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "request_id",
+              "value": "={{ String($node[\"Extract context\"].json[\"request_id\"]).replace(/^=/, '') }}"
+            },
+            {
+              "name": "workflow_type",
+              "value": "={{ $node[\"Extract context\"].json[\"workflow_type\"] }}"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.status || \"executed\" }}"
+            },
+            {
+              "name": "results",
+              "value": "={{ $json.results || [] }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ $json.metadata || {} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        7312,
+        -768
+      ],
+      "id": "1bbd1c77-5ee1-4aa6-a4ee-f9c13262c9a7",
+      "name": "HTTP Request",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "57f49d5d-69d6-4886-917f-e5b474dcc2e8",
+              "leftValue": "={{ String($json.params?.document_source || '').toLowerCase().startsWith('email://') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3728,
+        -768
+      ],
+      "id": "49260d2c-66e6-4c2c-a874-5af2849f2244",
+      "name": "Route by Source"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4400,
+        -688
+      ],
+      "id": "39efb23e-fac1-44e3-b8dd-849737e0855f",
+      "name": "extract source merge"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": "={{ $json.params.email_fetch_limit || 3 }}",
+        "simple": false,
+        "filters": {
+          "includeSpamTrash": false,
+          "labelIds": [
+            "INBOX"
+          ],
+          "q": "={{ $json.params.gmail_query || 'in:inbox has:attachment (filename:pdf OR filename:doc OR filename:docx) (resume OR cv OR \"curriculum vitae\") -from:noreply -from:no-reply newer_than:365d' }}"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3952,
+        -960
+      ],
+      "id": "2ee8b28e-0b76-4f2e-aa02-c224dd0c9b8a",
+      "name": "Get many messages",
+      "webhookId": "092239ef-081d-4085-a066-8c49ee77e430",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "XxqaRtw9swG1kcXj",
+          "name": "prod_gmail_oauth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "shortlisted",
+        "include": "allOtherFields",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        5296,
+        -480
+      ],
+      "id": "791f2520-75df-40b7-bf96-037152bef24b",
+      "name": "Split Out1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "10865525-1b19-4c42-bc90-9a17140f0a33",
+              "name": "request_id",
+              "value": "={{$json.request_id}}",
+              "type": "string"
+            },
+            {
+              "id": "6fe8a192-5d8d-4727-a1c5-d12ba9c05bb3",
+              "name": "workflow_type",
+              "value": "={{$json.workflow_type}}",
+              "type": "string"
+            },
+            {
+              "id": "c893faa4-af83-4d6f-a2fa-49addca91c92",
+              "name": "candidate_name",
+              "value": "={{ $json.shortlisted.candidate_name || $json.shortlisted.name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "29bdcf95-4a50-475f-a6c6-853798e12433",
+              "name": "candidate_email",
+              "value": "={{ $json.shortlisted.candidate_email || $json.shortlisted.email || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "1da162a9-933b-4aab-8de3-68c3d32f4f73",
+              "name": "candidate_score",
+              "value": "={{ $json.shortlisted.score || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "01855890-00bf-47cc-93b8-094a1c593f4b",
+              "name": "start_time",
+              "value": "={{ $json.shortlisted.metadata?.interview_start || $json.shortlisted.interview_start || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "41f35704-49fe-48e2-baa3-48abbd9239cb",
+              "name": "end_time",
+              "value": "={{ $json.shortlisted.metadata?.interview_end || $json.shortlisted.interview_end || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "shortlist_rank",
+              "name": "shortlist_rank",
+              "value": "={{ $json.shortlisted.metadata?.shortlist_rank || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "slot_audit",
+              "name": "slot_audit",
+              "value": "={{ $json.shortlisted.metadata?.slot_audit || {} }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5744,
+        -480
+      ],
+      "id": "43894619-c4ae-425d-9bc6-0121484347c8",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.candidate_email}}",
+        "subject": "={{ \"Interview Update | \" + $json.candidate_name + \" | Request \" + String($json.request_id).replace(/^=/, \"\") }}",
+        "emailType": "text",
+        "message": "={{ \"Hi \" + $json.candidate_name + \"\\n\\nYou are shortlisted for interview.\\nStart: \" + $json.start_time + \"\\nEnd: \" + $json.end_time + \"\\nMeeting Link: \" + ($json.calendar_link || 'Will be shared separately') + \"\\n\\nRegards,\\nHR Team\" }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        6416,
+        -480
+      ],
+      "id": "c4aacb2c-69a7-4eb5-ad42-18b1cc01deef",
+      "name": "Send a message1",
+      "webhookId": "f3b4e845-c985-4f05-aa63-69a57106670e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "XxqaRtw9swG1kcXj",
+          "name": "prod_gmail_oauth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "danishshah9749@gmail.com",
+          "mode": "list",
+          "cachedResultName": "danishshah9749@gmail.com"
+        },
+        "start": "={{$json.start_time}}",
+        "end": "={{$json.end_time}}",
+        "additionalFields": {
+          "attendees": [
+            "={{$json.candidate_email}}"
+          ],
+          "conferenceDataUi": {
+            "conferenceDataValues": {
+              "conferenceSolution": "hangoutsMeet"
+            }
+          },
+          "description": "={{ \"workflow_type=\" + $json.workflow_type + \", score=\" + $json.candidate_score }}",
+          "summary": "={{ \"Interview | \" + $json.candidate_name + \" | Req \" + String($json.request_id).replace(/^=/, \"\") }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        5968,
+        -480
+      ],
+      "id": "07c13ef8-6abb-414b-b560-3e8b8fabdc1c",
+      "name": "Create an event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "KovPRoMHiO2vUonR",
+          "name": "prod_calendar_oauth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ctx = $node[\"Edit Fields\"].json;\n\nreturn {\n  json: {\n    request_id: String(ctx.request_id || \"\").replace(/^=/, \"\"),\n    workflow_type: ctx.workflow_type || \"hr_recruitment\",\n    step_id: \"schedule_interviews\",\n    status: \"completed\",\n    candidate_name: ctx.candidate_name ?? null,\n    candidate_email: ctx.candidate_email ?? null,\n    start_time: ctx.start_time ?? null,\n    end_time: ctx.end_time ?? null,\n    shortlist_rank: ctx.shortlist_rank ?? null,\n    slot_audit: ctx.slot_audit ?? null,\n    calendar_event_id: $json.id ?? null,\n    calendar_link: $json.hangoutLink ?? $json.htmlLink ?? null,\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6192,
+        -480
+      ],
+      "id": "77c56355-f050-4209-a635-9cb2fe0d5d06",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($json.trigger_context?.document?.content_base64 ? 'http://localhost:8000/api/document/extract' : 'http://localhost:8000/api/ocr/extract') }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "request_id",
+              "value": "={{$json.request_id}}"
+            },
+            {
+              "name": "workflow_type",
+              "value": "={{ String($json.workflow_type).replace(/^=/, \"\") }}"
+            },
+            {
+              "name": "step_id",
+              "value": "extract_text"
+            },
+            {
+              "name": "document_path",
+              "value": "={{ $json.params.document_source }}"
+            },
+            {
+              "name": "image_base64",
+              "value": "={{ $json.trigger_context?.document?.content_base64 || \"\" }}"
+            },
+            {
+              "name": "content_base64",
+              "value": "={{ $json.trigger_context?.document?.content_base64 || \"\" }}"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.trigger_context?.document?.filename || \"uploaded-document\" }}"
+            },
+            {
+              "name": "mime_type",
+              "value": "={{ $json.trigger_context?.document?.mime_type || \"application/octet-stream\" }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $json.params.language || \"eng\" }}"
+            },
+            {
+              "name": "use_preprocessing",
+              "value": "true"
+            },
+            {
+              "name": "use_ocr_fallback",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4176,
+        -768
+      ],
+      "id": "beb6475e-f622-4fe5-b3c8-4958f3e8dd14",
+      "name": "Extract Text"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e68b5981-87de-461a-8de1-d4613032e9cc",
+              "leftValue": "={{ (() => {\n  const src = String($json.params?.document_source || '').trim().toLowerCase();\n  const triggerDoc = $json.trigger_context?.document || {};\n  const hasInlineDocument = Boolean(triggerDoc.content_base64);\n  return /^[a-zA-Z]:[\\\\/]/.test(src) || src.startsWith('/') || src.startsWith('\\\\\\\\') || (src === 'trigger://document_upload' && hasInlineDocument);\n})() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3952,
+        -672
+      ],
+      "id": "33be3efa-ef8f-4caf-b080-d4fb70ae62f8",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return {\n  json: {\n    request_id: String($json.request_id).replace(/^=/, ''),\n    workflow_type: $json.workflow_type,\n    step_id: 'extract_text',\n    status: 'skipped',\n    error: `Unsupported document source: ${$json.params?.document_source || ''}`\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4176,
+        -576
+      ],
+      "id": "512c153b-93da-4bfa-943d-bac7cba84144",
+      "name": "Unsupported Source"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $node[\"Extract context\"].json;\nconst items = $input.all();\n\nconst requestId = String(ctx.request_id || \"\").replace(/^=/, \"\");\nconst workflowType = ctx.workflow_type || \"hr_recruitment\";\nconst ALLOWED_MIME_PREFIXES = [\n  'application/pdf',\n  'application/msword',\n  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',\n  'application/octet-stream',\n];\nconst ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx'];\nconst FILENAME_HINT_RE = /(resume|cv|curriculum[ _-]?vitae|biodata|bio[ _-]?data|candidate|profile)/i;\nconst MESSAGE_HINT_RE = /(resume|cv|curriculum vitae|job application|application for|candidate profile|candidate resume)/i;\nconst SECTION_HINT_RE = /\\b(summary|objective|experience|employment|work history|skills|technical skills|projects|education|certifications|achievements|internship|profile)\\b/gi;\nconst NEGATIVE_HINT_RE = /(thank you for your interest|admission|brochure|newsletter|unsubscribe|prospectus|fee structure|campus|apply now)/i;\nconst EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i;\nconst PHONE_RE = /(?:\\+?\\d{1,3}[\\s-]?)?(?:\\(?\\d{3,5}\\)?[\\s-]?)?\\d{3,5}[\\s-]?\\d{3,5}/;\nconst PROFILE_RE = /(linkedin\\.com|github\\.com|portfolio|behance|leetcode)/i;\nconst AUTOMATED_SENDER_RE = /(no-?reply|mailer-daemon|notification|newsletter)/i;\n\nfunction parseHeader(messageJson, headerName) {\n  const headers = Array.isArray(messageJson?.payload?.headers) ? messageJson.payload.headers : [];\n  const found = headers.find((h) => (h.name || '').toLowerCase() === headerName.toLowerCase());\n  return (found && found.value) || '';\n}\n\nfunction parseSender(messageJson) {\n  const fromCandidate = parseHeader(messageJson, 'From') || messageJson?.from || messageJson?.sender || messageJson?.email || '';\n\n  let rawText = '';\n  let email = '';\n  let namePart = '';\n\n  if (typeof fromCandidate === 'string') {\n    rawText = fromCandidate.trim();\n  } else if (fromCandidate && typeof fromCandidate === 'object') {\n    rawText = String(fromCandidate.text || fromCandidate.value || fromCandidate.name || '').trim();\n    email = String(fromCandidate.email || fromCandidate.address || fromCandidate.emailAddress || '').trim();\n    namePart = String(fromCandidate.name || '').trim();\n  }\n\n  const emailMatch = rawText.match(/<([^>]+)>/) || rawText.match(EMAIL_RE);\n  if (!email && emailMatch) {\n    email = (emailMatch[1] || emailMatch[0] || '').trim();\n  }\n\n  if (!email) {\n    const fallback = (JSON.stringify(messageJson || {}).match(EMAIL_RE) || [''])[0];\n    email = String(fallback || '').trim();\n  }\n\n  if (!namePart) {\n    namePart = rawText.replace(/<[^>]+>/, '').trim().replace(/^\\\"|\\\"$/g, '');\n  }\n  if (!namePart && email) {\n    namePart = email.split('@')[0].replace(/[._-]+/g, ' ');\n  }\n\n  return {\n    from_header: rawText || null,\n    candidate_email: email || null,\n    candidate_name: (namePart || 'Candidate')\n      .split(' ')\n      .filter(Boolean)\n      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))\n      .join(' '),\n  };\n}\n\nfunction normalizeText(value) {\n  return String(value || '').trim();\n}\n\nfunction hasAllowedAttachment(filename, mimeType) {\n  const name = normalizeText(filename).toLowerCase();\n  const mime = normalizeText(mimeType).toLowerCase();\n  return ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext)) || ALLOWED_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));\n}\n\nfunction scoreResumeSignal({ subject, snippet, filename, text, senderEmail }) {\n  const cleanSubject = normalizeText(subject);\n  const cleanSnippet = normalizeText(snippet);\n  const cleanFilename = normalizeText(filename);\n  const cleanText = normalizeText(text);\n  const combinedText = [cleanSubject, cleanSnippet, cleanText].filter(Boolean).join('\\n');\n  const sectionMatches = Array.from(new Set((combinedText.match(SECTION_HINT_RE) || []).map((m) => m.toLowerCase())));\n  const wordCount = cleanText.split(/\\s+/).filter(Boolean).length;\n  const filenameHint = FILENAME_HINT_RE.test(cleanFilename);\n  const messageHint = MESSAGE_HINT_RE.test([cleanSubject, cleanSnippet].join(' '));\n  const hasEmail = EMAIL_RE.test(cleanText) || EMAIL_RE.test(cleanSnippet) || EMAIL_RE.test(cleanSubject);\n  const hasPhone = PHONE_RE.test(cleanText);\n  const hasProfile = PROFILE_RE.test(cleanText);\n  const negativeHit = NEGATIVE_HINT_RE.test([cleanSubject, cleanSnippet, cleanText.slice(0, 400)].join(' '));\n  const automatedSender = AUTOMATED_SENDER_RE.test(normalizeText(senderEmail));\n\n  let score = 0;\n  const reasons = [];\n  if (filenameHint) {\n    score += 4;\n    reasons.push('attachment filename looks like a resume');\n  }\n  if (messageHint) {\n    score += 2;\n    reasons.push('subject/snippet references resume or application');\n  }\n  if (sectionMatches.length >= 2) {\n    score += Math.min(4, sectionMatches.length);\n    reasons.push(`resume sections found: ${sectionMatches.join(', ')}`);\n  }\n  if (wordCount >= 120) {\n    score += 1;\n    reasons.push(`document length ${wordCount} words`);\n  }\n  if (hasEmail) {\n    score += 1;\n    reasons.push('contact email found in content');\n  }\n  if (hasPhone) {\n    score += 1;\n    reasons.push('phone number found in content');\n  }\n  if (hasProfile) {\n    score += 1;\n    reasons.push('professional profile link found');\n  }\n  if (negativeHit) {\n    score -= 4;\n    reasons.push('negative non-resume phrase found');\n  }\n  if (automatedSender) {\n    score -= 1;\n    reasons.push('automated sender pattern found');\n  }\n\n  const isResume = (score >= 6 && sectionMatches.length >= 2) || (filenameHint && score >= 5) || (sectionMatches.length >= 3 && hasEmail);\n  return {\n    isResume,\n    score,\n    reasons,\n    sectionMatches,\n    wordCount,\n  };\n}\n\nconst lines = [];\nconst candidates = [];\nconst filteredOut = [];\n\nfor (let idx = 0; idx < items.length; idx++) {\n  const item = items[idx];\n  const m = item.json || {};\n  const binary = item.binary || {};\n\n  const subject = m.subject || parseHeader(m, 'Subject');\n  const snippet = m.snippet || '';\n  const sender = parseSender(m);\n  const attachmentKeys = Object.keys(binary);\n  const acceptedAttachments = [];\n  const rejectedAttachments = [];\n\n  for (const key of attachmentKeys) {\n    const b = binary[key] || {};\n    const filename = b.fileName || key;\n    const mimeType = b.mimeType || 'application/octet-stream';\n\n    if (!hasAllowedAttachment(filename, mimeType)) {\n      rejectedAttachments.push({ filename, mimeType, reason: 'unsupported_attachment_type' });\n      continue;\n    }\n\n    let contentBase64 = '';\n    try {\n      const buf = await this.helpers.getBinaryDataBuffer(idx, key);\n      contentBase64 = Buffer.from(buf).toString('base64');\n    } catch (err) {\n      contentBase64 = normalizeText(b.data || '');\n    }\n\n    if (!contentBase64) {\n      rejectedAttachments.push({ filename, mimeType, reason: 'binary_buffer_unavailable' });\n      continue;\n    }\n\n    try {\n      const res = await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'http://localhost:8000/api/document/extract',\n        body: {\n          request_id: requestId,\n          workflow_type: workflowType,\n          step_id: 'extract_text',\n          filename,\n          mime_type: mimeType,\n          content_base64: contentBase64,\n          language: 'eng',\n          use_ocr_fallback: true,\n        },\n        json: true,\n      });\n\n      const extracted = normalizeText(res?.extracted_text || '');\n      const verdict = scoreResumeSignal({\n        subject,\n        snippet,\n        filename,\n        text: extracted,\n        senderEmail: sender.candidate_email,\n      });\n\n      if (!verdict.isResume) {\n        rejectedAttachments.push({\n          filename,\n          mimeType,\n          reason: 'not_resume_like',\n          score: verdict.score,\n          reasons: verdict.reasons,\n          word_count: verdict.wordCount,\n        });\n        continue;\n      }\n\n      acceptedAttachments.push({\n        filename,\n        mimeType,\n        text: extracted,\n        score: verdict.score,\n        reasons: verdict.reasons,\n        word_count: verdict.wordCount,\n      });\n    } catch (err) {\n      rejectedAttachments.push({ filename, mimeType, reason: 'document_extract_failed', error: String(err.message || err) });\n    }\n  }\n\n  if (!acceptedAttachments.length) {\n    filteredOut.push({\n      message_id: m.id || null,\n      subject: subject || null,\n      sender: sender.from_header,\n      candidate_email: sender.candidate_email,\n      reason: 'no_resume_like_attachments',\n      rejected_attachments: rejectedAttachments,\n    });\n    continue;\n  }\n\n  const attachmentTexts = acceptedAttachments.map((entry) => `[Attachment: ${entry.filename}]\\n${entry.text}`);\n  const resumeText = attachmentTexts.join('\\n\\n').trim();\n  if (resumeText) {\n    lines.push(resumeText);\n  }\n\n  candidates.push({\n    candidate_name: sender.candidate_name || `Candidate ${idx + 1}`,\n    candidate_email: sender.candidate_email,\n    resume_text: resumeText,\n    skills: [],\n    experience_years: null,\n    metadata: {\n      source: 'gmail',\n      message_id: m.id || null,\n      subject: subject || null,\n      from: sender.from_header,\n      accepted_attachment_count: acceptedAttachments.length,\n      accepted_attachments: acceptedAttachments.map((entry) => ({\n        filename: entry.filename,\n        mimeType: entry.mimeType,\n        score: entry.score,\n        reasons: entry.reasons,\n      })),\n      rejected_attachments: rejectedAttachments,\n    },\n  });\n}\n\nreturn [{\n  json: {\n    request_id: requestId,\n    workflow_type: workflowType,\n    step_id: 'extract_text',\n    status: 'completed',\n    source: 'email://inbox',\n    engine: 'gmail+attachments+resume_filter',\n    email_message_count: items.length,\n    email_message_ids: items.map((i) => i.json?.id).filter(Boolean),\n    candidate_count: candidates.length,\n    filtered_out_count: filteredOut.length,\n    filtered_out_messages: filteredOut,\n    extracted_text: lines.join('\\n\\n'),\n    candidates,\n    error: null,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4176,
+        -960
+      ],
+      "id": "94938a29-d58c-494d-8a0a-56f0f3362ebf",
+      "name": "Normalize Email Source"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $node[\"Extract context\"].json;\nreturn $input.all().map(item => ({\n  json: {\n    request_id: String(ctx.request_id || \"\").replace(/^=/, \"\"),\n    workflow_type: ctx.workflow_type || null,\n    step_id: \"send_emails\",\n    status: \"completed\",\n    message_id: item.json.id ?? null,\n    thread_id: item.json.threadId ?? null\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6640,
+        -480
+      ],
+      "id": "40b48e4f-381b-4404-999b-f45ec1d95cc1",
+      "name": "Normalize Send Email Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $node[\"Extract context\"].json;\nconst shortlisted = Array.isArray($json.shortlisted) ? $json.shortlisted : [];\n\nconst audit = shortlisted.map((candidate) => ({\n  candidate_name: candidate.candidate_name || candidate.name || null,\n  candidate_email: candidate.candidate_email || candidate.email || null,\n  score: candidate.score ?? null,\n  interview_start: candidate.metadata?.interview_start || candidate.interview_start || null,\n  interview_end: candidate.metadata?.interview_end || candidate.interview_end || null,\n  shortlist_rank: candidate.metadata?.shortlist_rank || null,\n  slot_audit: candidate.metadata?.slot_audit || null,\n}));\n\nreturn [{\n  json: {\n    request_id: String(ctx.request_id || \"\").replace(/^=/, \"\"),\n    workflow_type: ctx.workflow_type || null,\n    step_id: \"shortlist\",\n    status: \"completed\",\n    shortlisted_count: shortlisted.length,\n    shortlisted: audit,\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6640,
+        -768
+      ],
+      "id": "c4f714db-7aa8-4ba5-b634-5d4184230693",
+      "name": "Normalize Shortlist Result"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/rank/candidates",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "request_id",
+              "value": "={{ String($json.request_id).replace(/^=/, '') }}"
+            },
+            {
+              "name": "workflow_type",
+              "value": "={{ String($json.workflow_type).replace(/^=/, '') }}"
+            },
+            {
+              "name": "step_id",
+              "value": "rank_candidates"
+            },
+            {
+              "name": "ranking_logic",
+              "value": "={{ $json.ranking_logic || 'weighted_scoring' }}"
+            },
+            {
+              "name": "criteria",
+              "value": "={{ $json.criteria || '' }}"
+            },
+            {
+              "name": "candidates",
+              "value": "={{ $json.candidates || [] }}"
+            },
+            {
+              "name": "extracted_text",
+              "value": "={{ $json.extracted_text || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4848,
+        -600
+      ],
+      "id": "ce297e7b-4918-4789-99ce-90117d53320e",
+      "name": "Rank Candidates"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/shortlist/candidates",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "request_id",
+              "value": "={{ String($json.request_id).replace(/^=/, '') }}"
+            },
+            {
+              "name": "workflow_type",
+              "value": "={{ String($json.workflow_type).replace(/^=/, '') }}"
+            },
+            {
+              "name": "step_id",
+              "value": "shortlist"
+            },
+            {
+              "name": "top_k",
+              "value": "={{ (() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === 'shortlist'); return Number(s?.params?.top_k || 5); })() }}"
+            },
+            {
+              "name": "ranked_candidates",
+              "value": "={{ $json.ranked_candidates || [] }}"
+            },
+            {
+              "name": "timezone",
+              "value": "={{ (() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === 'shortlist'); return s?.params?.timezone || 'UTC'; })() }}"
+            },
+            {
+              "name": "working_hours_start",
+              "value": "={{ (() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === 'shortlist'); return s?.params?.working_hours_start || '10:00'; })() }}"
+            },
+            {
+              "name": "working_hours_end",
+              "value": "={{ (() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === 'shortlist'); return s?.params?.working_hours_end || '18:00'; })() }}"
+            },
+            {
+              "name": "slot_duration_minutes",
+              "value": "={{ Number((() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === 'shortlist'); return s?.params?.slot_duration_minutes || 30; })()) }}"
+            },
+            {
+              "name": "slot_gap_minutes",
+              "value": "={{ Number((() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === 'shortlist'); return s?.params?.slot_gap_minutes || 15; })()) }}"
+            },
+            {
+              "name": "calendar_account",
+              "value": "={{ (() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === \"schedule_interviews\"); return s?.params?.calendar_account || \"primary\"; })() }}"
+            },
+            {
+              "name": "use_calendar_freebusy",
+              "value": "={{ true }}"
+            },
+            {
+              "name": "freebusy_lookahead_days",
+              "value": "={{ Number((() => { const steps = $node[\"Extract context\"].json.steps || []; const s = steps.find((x) => x.step_id === \"shortlist\"); return s?.params?.freebusy_lookahead_days || 14; })()) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5072,
+        -528
+      ],
+      "id": "d3489263-e151-4f9b-bd7f-bf9f618ed428",
+      "name": "Shortlist"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $node[\"Extract context\"].json || {};\nconst steps = Array.isArray(ctx.steps) ? ctx.steps : [];\nconst extractResult = $json || {};\nconst triggerContext = ctx.trigger_context || {};\nconst triggerCandidate = triggerContext.candidate || triggerContext.payload || {};\n\nconst rankStep = steps.find((s) => s.step_id === 'rank_candidates') || {};\nconst rankParams = rankStep.params || {};\n\nconst extractedCandidates = Array.isArray(extractResult.candidates) ? extractResult.candidates : [];\nconst configuredCandidates = Array.isArray(rankParams.candidates) ? rankParams.candidates : [];\nconst fallbackCandidateEmail = String(triggerCandidate.candidate_email || triggerCandidate.candidateEmail || triggerCandidate.email || '').trim();\nconst fallbackCandidateName = String(triggerCandidate.candidate_name || triggerCandidate.candidateName || triggerCandidate.applicant_name || triggerCandidate.applicantName || '').trim();\n\nconst baseCandidates = configuredCandidates.length ? configuredCandidates : extractedCandidates;\nlet normalizedCandidates = baseCandidates.map((candidate, index) => {\n  if (!candidate || typeof candidate !== 'object') {\n    return candidate;\n  }\n\n  if (index !== 0 || candidate.candidate_email || !fallbackCandidateEmail) {\n    return candidate;\n  }\n\n  return {\n    ...candidate,\n    candidate_email: fallbackCandidateEmail,\n    candidate_name: candidate.candidate_name || candidate.name || fallbackCandidateName || 'Candidate 1',\n    metadata: {\n      ...(candidate.metadata || {}),\n      contact_source: 'trigger_context',\n    },\n  };\n});\n\nif (!normalizedCandidates.length && (fallbackCandidateEmail || fallbackCandidateName)) {\n  normalizedCandidates = [{\n    candidate_name: fallbackCandidateName || 'Candidate 1',\n    candidate_email: fallbackCandidateEmail || null,\n    resume_text: extractResult.extracted_text || '',\n    skills: [],\n    experience_years: null,\n    metadata: {\n      source: 'document_trigger',\n      contact_source: 'trigger_context',\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    request_id: String(ctx.request_id || '').replace(/^=/, ''),\n    workflow_type: ctx.workflow_type || 'hr_recruitment',\n    ranking_logic: rankParams.ranking_logic || 'weighted_scoring',\n    criteria: rankParams.criteria || '',\n    candidates: normalizedCandidates,\n    extracted_text: extractResult.extracted_text || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4624,
+        -600
+      ],
+      "id": "90a5268f-587d-4739-8006-96bf176c39fc",
+      "name": "Build Rank Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "69078495-4f72-44aa-9a2b-df4c78d2d927",
+              "leftValue": "={{ Boolean($json.shortlisted?.candidate_email) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5520,
+        -480
+      ],
+      "id": "3ce8d01f-8147-4cec-b915-334d6bc1ebc9",
+      "name": "Has Candidate Email"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FASTAPI_BASE_URL }}/api/internal/hr-result",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "8c04d69e-e310-4166-a98a-0c9a03861539",
+      "name": "Notify FastAPI — HR Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6416,
+        -288
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Flatten Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Route by Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract context": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Step": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Source": {
+      "main": [
+        [
+          {
+            "node": "Get many messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract source merge": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Rank Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many messages": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Has Candidate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Create an event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Send Email Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          },
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify FastAPI — HR Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "extract source merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported Source": {
+      "main": [
+        [
+          {
+            "node": "extract source merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Normalize Email Source": {
+      "main": [
+        [
+          {
+            "node": "extract source merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Send Email Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Normalize Shortlist Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Rank Candidates": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shortlist": {
+      "main": [
+        [
+          {
+            "node": "Normalize Shortlist Result",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rank Input": {
+      "main": [
+        [
+          {
+            "node": "Rank Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Candidate Email": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "36f4b6ca-e0ec-4a9e-b549-bf7118f31ec8",
+  "activeVersionId": null,
+  "versionCounter": 113,
+  "triggerCount": 1,
+  "tags": [
+    {
+      "updatedAt": "2026-03-09T17:20:40.657Z",
+      "createdAt": "2026-03-09T17:20:40.657Z",
+      "id": "SP0BcqzwwvoUWur1",
+      "name": "HR Automation"
+    },
+    {
+      "updatedAt": "2026-03-09T17:20:40.616Z",
+      "createdAt": "2026-03-09T17:20:40.616Z",
+      "id": "sfAlANXbYNWNvbLG",
+      "name": "LLM Enhanced"
+    }
+  ],
+  "shared": [
+    {
+      "updatedAt": "2026-03-09T17:20:42.394Z",
+      "createdAt": "2026-03-09T17:20:42.394Z",
+      "role": "workflow:owner",
+      "workflowId": "F8aP9I36h06u1krE",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "Auto",
+    "description": ""
+  }
+}

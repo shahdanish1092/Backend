@@ -1,0 +1,214 @@
+{
+  "updatedAt": "2026-03-25T17:47:53.277Z",
+  "createdAt": "2026-03-25T17:47:53.277Z",
+  "id": "ry5QhcISuxigXZSQ",
+  "name": "Rule | Recruitment Pipeline Automation | new_email_received",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "authentication": "oAuth2",
+        "event": "messageReceived",
+        "simple": false,
+        "filters": {
+          "includeSpamTrash": false,
+          "includeDrafts": false,
+          "labelIds": [
+            "INBOX"
+          ],
+          "q": "in:inbox has:attachment (filename:pdf OR filename:doc OR filename:docx) (resume OR cv OR \"curriculum vitae\") -from:noreply -from:no-reply newer_than:30d",
+          "readStatus": "unread"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -900,
+        -80
+      ],
+      "id": "dbae01b3-6d85-4cbb-98b1-5f1cf3bdd9e7",
+      "name": "Rule Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "XxqaRtw9swG1kcXj",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Forward attachments as base64 — no re-fetch needed on the backend\nconst email = $json;\nconst binary = $binary || {};\nconst attachments = Object.entries(binary).map(([key, b]) => ({\n  filename: b.fileName || key,\n  mime_type: b.mimeType || 'application/octet-stream',\n  content_base64: b.data,\n  size_bytes: b.fileSize || 0,\n  attachment_id: key,\n}));\nreturn [{ json: {\n  ...email,\n  attachments,\n  attachment_count: attachments.length,\n  body_text: email.text || email.bodyText || '',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -80
+      ],
+      "id": "4f4bf6cf-cbc2-486d-8798-89c72609cb80",
+      "name": "Build Attachment Payload"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5a0a07bc-7479-4e5f-8059-1b64c0ea872b",
+              "name": "rule_id",
+              "value": "feba8c53-6a75-47ea-bb18-454c4acc5420",
+              "type": "string"
+            },
+            {
+              "id": "047be604-8ca0-4480-928a-58987c4e54d8",
+              "name": "workflow_type",
+              "value": "hr_recruitment",
+              "type": "string"
+            },
+            {
+              "id": "e76a58a6-3c42-418f-aeb7-4086367506b7",
+              "name": "trigger_type",
+              "value": "new_email_received",
+              "type": "string"
+            },
+            {
+              "id": "cc7c0f70-5d08-489d-a705-2a4960a434b1",
+              "name": "user_statement",
+              "value": "Screen candidate resumes, shortlist the best applicants, and schedule interviews.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -384,
+        -80
+      ],
+      "id": "f3e184cd-9992-4166-b820-176c204dc962",
+      "name": "Set Rule Context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-rules/feba8c53-6a75-47ea-bb18-454c4acc5420/dispatch",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Service-Token",
+              "value": "your-secure-backend-service-token-here"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -128,
+        -80
+      ],
+      "id": "90aae8c0-d5eb-41fa-bf98-786a31cf0e2e",
+      "name": "Dispatch Rule to Backend"
+    }
+  ],
+  "connections": {
+    "Rule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Attachment Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Attachment Payload": {
+      "main": [
+        [
+          {
+            "node": "Set Rule Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Rule Context": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Rule to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "node:Rule Trigger": {
+      "Rule Trigger": {
+        "lastTimeChecked": 1774460873
+      }
+    }
+  },
+  "meta": null,
+  "pinData": null,
+  "versionId": "bd4cc5fd-fd75-4bd5-b9e1-09de929b6650",
+  "activeVersionId": null,
+  "versionCounter": 20,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-25T17:47:53.324Z",
+      "createdAt": "2026-03-25T17:47:53.324Z",
+      "role": "workflow:owner",
+      "workflowId": "ry5QhcISuxigXZSQ",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

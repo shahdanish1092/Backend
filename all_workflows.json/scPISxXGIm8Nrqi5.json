@@ -1,0 +1,158 @@
+{
+  "updatedAt": "2026-03-24T16:57:44.231Z",
+  "createdAt": "2026-03-24T16:12:37.216Z",
+  "id": "scPISxXGIm8Nrqi5",
+  "name": "Rule | Smoke Resume Upload Rule | document.uploaded",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automation-rule/1c33383f-e3ae-4992-b40c-28ef256f3696",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -640,
+        -80
+      ],
+      "id": "5bc626e1-e394-4981-9d40-f6a077f1751d",
+      "name": "Rule Trigger",
+      "webhookId": "fbffb89a-f0cd-4114-95b1-9862c1c687d4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Route document to correct pipeline: resume\nconst body = $json.body || $json;\nreturn [{ json: {\n  ...body,\n  pipeline: body.pipeline || 'resume',\n  rule_id: '1c33383f-e3ae-4992-b40c-28ef256f3696',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        -80
+      ],
+      "id": "e20d4f16-8f0a-43c7-a566-8fcddd883398",
+      "name": "Route Document"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-rules/1c33383f-e3ae-4992-b40c-28ef256f3696/dispatch",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Service-Token",
+              "value": "your-secure-backend-service-token-here"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -128,
+        -80
+      ],
+      "id": "caba2f02-d818-44d6-ac53-1f2fe292923b",
+      "name": "Dispatch Rule to Backend"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        128,
+        -80
+      ],
+      "id": "d8742470-bb84-4eb4-9774-a0e1699e979c",
+      "name": "Respond OK"
+    }
+  ],
+  "connections": {
+    "Rule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Route Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Document": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Rule to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Rule to Backend": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "8afa6067-fb09-4526-b681-c029df743bbc",
+  "activeVersionId": null,
+  "versionCounter": 29,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-24T16:12:37.234Z",
+      "createdAt": "2026-03-24T16:12:37.234Z",
+      "role": "workflow:owner",
+      "workflowId": "scPISxXGIm8Nrqi5",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "updatedAt": "2026-03-21T17:42:30.000Z",
+  "createdAt": "2026-03-14T13:04:26.005Z",
+  "id": "FNuqFBLsn1xhIrw8",
+  "name": "Daily Summary Cron Trigger",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "06248188-2ce0-4687-b73b-c74a2953359b",
+      "name": "Daily 8am Cron",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nreturn [{ json: { summary_date: today, trigger: 'cron' } }];"
+      },
+      "id": "9216fd63-8e1a-40de-8252-6990ee6dcde0",
+      "name": "Build Summary Date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/automation-rules/{{ $env.SUMMARY_RULE_ID }}/trigger/daily-summary",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "51cd0632-57ce-4617-82c5-33bd7d39cfeb",
+      "name": "Generate AI Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        448,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.summary?.health_status }}",
+              "rightValue": "Healthy",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d29ce5d4-86c5-4eeb-b283-751c174d95ce",
+      "name": "Health Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        688,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL }}/api/email/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "6ef2ebef-cd69-474f-b45d-942666b474ad",
+      "name": "Send Health Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        928,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('[Daily Summary] Health OK:', $json.summary?.health_status);\nreturn [{ json: $json }];"
+      },
+      "id": "0b383a05-a316-4882-9c33-f543ea6e52ca",
+      "name": "Log Healthy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        464
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 8am Cron": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Date": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Summary": {
+      "main": [
+        [
+          {
+            "node": "Health Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check": {
+      "main": [
+        [
+          {
+            "node": "Send Health Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Healthy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Daily Cron Trigger (9 AM)": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": null,
+  "pinData": {},
+  "versionId": "51b1248b-d30b-4d8a-bed6-57e73080458f",
+  "activeVersionId": null,
+  "versionCounter": 17,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-14T13:04:26.010Z",
+      "createdAt": "2026-03-14T13:04:26.010Z",
+      "role": "workflow:owner",
+      "workflowId": "FNuqFBLsn1xhIrw8",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

@@ -1,0 +1,201 @@
+{
+  "updatedAt": "2026-04-11T15:48:46.000Z",
+  "createdAt": "2026-03-15T17:51:36.120Z",
+  "id": "JLvZ4ypVgLFI5i0z",
+  "name": "Rule | Test Invoice Rule v2 | new_email_received",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "authentication": "oAuth2",
+        "event": "messageReceived",
+        "simple": false,
+        "filters": {
+          "includeSpamTrash": false,
+          "includeDrafts": false,
+          "labelIds": [
+            "INBOX"
+          ],
+          "q": "in:inbox has:attachment (filename:pdf OR filename:xls OR filename:xlsx OR filename:csv) (invoice OR bill OR receipt) -from:noreply -from:no-reply newer_than:30d",
+          "readStatus": "unread"
+        },
+        "options": {
+          "dataPropertyAttachmentsPrefixName": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -900,
+        -80
+      ],
+      "id": "7974c88e-6b94-41a2-bf4a-528c699280ac",
+      "name": "Rule Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "XxqaRtw9swG1kcXj",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Forward attachments as base64 — no re-fetch needed on the backend\nconst email = $json;\nconst binary = $binary || {};\nconst attachments = Object.entries(binary).map(([key, b]) => ({\n  filename: b.fileName || key,\n  mime_type: b.mimeType || 'application/octet-stream',\n  content_base64: b.data,\n  size_bytes: b.fileSize || 0,\n  attachment_id: key,\n}));\nreturn [{ json: {\n  ...email,\n  attachments,\n  attachment_count: attachments.length,\n  body_text: email.text || email.bodyText || '',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -80
+      ],
+      "id": "ebe5d847-8333-4e48-9642-ec94e05eb9df",
+      "name": "Build Attachment Payload"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e63a2123-4f34-400e-b7da-306ebc5bc6ed",
+              "name": "rule_id",
+              "value": "6cb62a68-a53a-4834-b82f-d3198c5254d0",
+              "type": "string"
+            },
+            {
+              "id": "9c9770b9-6528-4a69-b436-4e37194a83dc",
+              "name": "workflow_type",
+              "value": "sheets_automation",
+              "type": "string"
+            },
+            {
+              "id": "57201bc8-bf12-4e82-9fea-04005746e809",
+              "name": "trigger_type",
+              "value": "new_email_received",
+              "type": "string"
+            },
+            {
+              "id": "c3041406-8b4c-4ea1-b209-8cbc9df7cfdf",
+              "name": "user_statement",
+              "value": "If Gmail receives invoice PDFs, extract the data and add it to my spreadsheet.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -384,
+        -80
+      ],
+      "id": "4eb8de9f-95e6-40d3-b401-1082897832fc",
+      "name": "Set Rule Context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/api/automation-rules/6cb62a68-a53a-4834-b82f-d3198c5254d0/dispatch",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -128,
+        -80
+      ],
+      "id": "d0828077-1fac-44bd-844d-f164dadb9e68",
+      "name": "Dispatch Rule to Backend"
+    }
+  ],
+  "connections": {
+    "Rule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Attachment Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Attachment Payload": {
+      "main": [
+        [
+          {
+            "node": "Set Rule Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Rule Context": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Rule to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "node:Rule Trigger": {
+      "Rule Trigger": {
+        "lastTimeChecked": 1773597096
+      }
+    }
+  },
+  "meta": null,
+  "pinData": null,
+  "versionId": "6ffbfa83-ebd2-45f8-bbd3-66bcbdcac39d",
+  "activeVersionId": null,
+  "versionCounter": 30,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-15T17:51:36.124Z",
+      "createdAt": "2026-03-15T17:51:36.124Z",
+      "role": "workflow:owner",
+      "workflowId": "JLvZ4ypVgLFI5i0z",
+      "projectId": "AhbfWspAylxboFZp",
+      "project": {
+        "updatedAt": "2026-03-09T17:15:33.594Z",
+        "createdAt": "2026-03-09T17:14:42.549Z",
+        "id": "AhbfWspAylxboFZp",
+        "name": "Danish Shah <danishshah9749@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "64eddb0c-a399-4339-9d42-94fe407987a3"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}
