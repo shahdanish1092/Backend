@@ -1,0 +1,1540 @@
+I'll read the frontend code and skill files first to give you grounded, specific advice.Ran 6 commandsRan 6 commandsNow I have a thorough understanding of the codebase. Let me produce the full architectural document.Read frontend design skillRead frontend design skillNow I have everything I need. Let me build the comprehensive architectural document.Now I have all the context I need. Let me produce the comprehensive document.
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+VvisualizeVvisualize show_widgetHere is the full architectural brief. I've read every key file in your uploaded codebase before writing this, so everything below is grounded in what actually exists — not generic advice.
+
+1. Architecture Overview
+The target architecture has four clean layers with a single direction of control: the frontend never touches n8n directly, and n8n never writes to your app database directly. The diagram above shows the final state.
+Responsibilities by layer:
+The React frontend owns only presentation and user intent. It sends natural-language requests and structured form inputs to the FastAPI backend over REST. It never knows n8n's URL or credentials. The existing code is already well-structured for this — the api/ folder is clean, Shadcn UI is solid, and the page router is correctly protected. This layer needs extension, not replacement.
+The FastAPI backend is the intelligence and orchestration layer. It parses user intent (via Groq/Llama), maps that intent to a workflow ID, calls n8n via its REST API to trigger execution, stores metadata in Postgres, and receives async callbacks from n8n when workflows complete. It owns user sessions, credential references, and audit logs. Your current backend has most of this scaffolding but has critical gaps (see Section 2).
+n8n is the pure execution engine. It owns OAuth credentials for external services (Gmail, Google Sheets, etc.), runs workflows, and posts a webhook back to FastAPI when done. It should never be called directly by the frontend. It currently lives in a separate project — this is your most pressing infrastructure problem.
+PostgreSQL on Railway is the source of truth for all application state. n8n uses its own internal SQLite/Postgres for workflow definitions; that stays separate. Your app DB stores users, workflow metadata, execution records, and credential references (not the actual OAuth tokens — those stay in n8n's credential vault).
+
+2. Gap Analysis
+Here is what I found by reading your actual code, in order of severity.
+Critical: n8n is isolated. Your backend and n8n are in separate projects with no runtime connection. The orchestration.py has HTTP helpers and n8n integration stubs, but there's no N8N_BASE_URL in your Railway environment and no service-to-service auth configured. Every workflow call currently silently fails or is mocked. Fix: add N8N_WEBHOOK_URL and N8N_API_KEY to Railway environment variables and wire orchestration.py to use them.
+Critical: Auth is a demo simulation. Your LandingPage.jsx hardcodes login('admin@spatialplus.io') and explicitly comments "For demo purposes, simulate OAuth success." The useAuth hook stores only an email string in localStorage with no token, expiry, or server-side session. axios.js attaches X-User-Email as the identity header — this is trivially spoofable. For a capstone demo this is acceptable only if you're not showing multi-user scenarios. If you are, you need a real session token issued server-side after the Google OAuth callback.
+High: API clients silently swallow errors. Every API module (hr.js, invoices.js, meetings.js) catches fetch errors and returns mock data instead of re-throwing. This means your UI shows "success" even when the backend is down. This hides broken integrations during demos. Remove the silent fallback returns; let errors surface so the user sees an honest error state.
+High: No webhook callback receiver on the backend. n8n is async — it finishes a workflow and needs to POST results somewhere. Your backend has no /api/webhooks/n8n/callback endpoint. Without it you can't show real workflow status updates in the UI. You're polling or faking it.
+High: No workflow state machine. The execution logs table exists (migration 001_create_execution_logs.sql) but there's no state enum or transition logic. Executions go in but never transition from pending → running → completed / failed. The dashboard polls getStatus() without any real execution state behind it.
+Medium: Connector credentials are frontend-owned. The HRConnectPage collects webhook URLs and secrets in the browser and posts them to the backend. The backend then presumably stores them. But the n8n credential vault is not involved at all — n8n won't know about these credentials unless you inject them via n8n's credential API. OAuth tokens (Gmail, Google Calendar) are entirely unhandled on the n8n side.
+Medium: No multi-tenant isolation. All queries use user_email as an unvalidated string passed in both the header and URL path (e.g. /api/hr/status/{user_email}). There's no check that the calling user owns the resource they're requesting. If two users exist, user A can query user B's data by guessing their email.
+Medium: server.py in backend/ uses MongoDB/Motor. This is a completely separate service from the main FastAPI app that uses Postgres. Having two backend services with different databases for what appears to be the same system is an architectural split that will cause confusion. Decide which one is canonical and delete or absorb the other before your demo.
+Low: Frontend auth uses localStorage not httpOnly cookies. For a capstone this is fine, but it means XSS can steal the session. Note for your write-up.
+Low: Logo URL is broken. The Sidebar.jsx image URL (k42pj7ep_image.pngb) ends in .pngb which is not a valid image format and will always 404. The fallback onError handler shows the gear icon instead, but the broken URL is a console error that reviewers will notice.
+
+3. n8n Integration Design
+Use your existing n8n instance. Do not spin up a new one. The friction of managing two n8n instances far outweighs any isolation benefit at this stage. What you need is a network bridge between your Railway-hosted FastAPI and your Docker n8n.
+How the backend triggers n8n:
+Use n8n's REST API, not webhooks, for triggering. The flow is: frontend sends a request → FastAPI validates it, creates an execution record in Postgres with status pending, then calls POST https://<n8n-host>/api/v1/workflows/<workflow_id>/run with a Bearer token (your n8n API key). n8n starts the workflow asynchronously and returns a 200 immediately.
+python# orchestration.py — trigger pattern
+async def trigger_n8n_workflow(workflow_id: str, payload: dict, execution_id: str):
+    headers = {"X-N8N-API-KEY": settings.N8N_API_KEY}
+    body = {
+        "workflowData": payload,
+        "callbackUrl": f"{settings.BACKEND_URL}/api/webhooks/n8n/callback/{execution_id}"
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{settings.N8N_BASE_URL}/api/v1/workflows/{workflow_id}/run",
+            json=body, headers=headers, timeout=10.0
+        )
+    return resp.json()
+How n8n posts results back:
+Add an HTTP Request node at the end of every n8n workflow that POSTs to {BACKEND_URL}/api/webhooks/n8n/callback/{execution_id}. This endpoint updates the execution record status to completed or failed and stores the result payload. The frontend polls GET /api/executions/{execution_id} every 3 seconds until it gets a terminal status.
+How workflows are created and managed:
+For your current scope, pre-build workflows in n8n and store their IDs in your database. Do not attempt to generate workflows dynamically via the API — this is extremely complex and unnecessary for a capstone. The user's natural language request maps to a workflow ID via your intent router (Groq/Llama), and FastAPI triggers the pre-existing workflow with the user's parameters as the input payload.
+Workflow discovery: Use GET /api/v1/workflows on n8n to fetch active workflow names and IDs at startup, cache them, and update your workflows table. This gives your sidebar real data.
+
+4. Database Design
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+VvisualizeVvisualize show_widgetKeep n8n's database separate. n8n manages its own internal state (workflow definitions, execution history, credential vault) in its own SQLite or Postgres. Your app DB stores only references to n8n objects (workflow IDs, credential IDs) — never the actual workflow JSON or OAuth tokens. This separation means n8n can be upgraded, replaced, or restarted without touching your schema.
+Use PostgreSQL for both — you already have it on Railway. No reason to introduce another DB. n8n can point to its own Railway Postgres instance or its default SQLite (fine for a demo). Your app uses the existing Railway Postgres.
+Key design decisions in the schema:
+EXECUTION_LOGS is the central state machine. The status column should be an enum: pending, running, completed, failed, timeout. FastAPI creates the record as pending when the user submits a request, sets it to running when n8n acknowledges the trigger, and the callback endpoint transitions it to completed or failed.
+CONNECTOR_CREDENTIALS stores only the n8n_credential_id (a reference into n8n's vault), not the actual OAuth tokens. When a user connects Gmail, your backend calls n8n's credential API to store the tokens there, and saves only the returned ID. This keeps sensitive credentials inside n8n's encrypted vault rather than your plaintext Postgres columns.
+The WORKFLOWS.domain field maps to your existing intent router domains (invoices, meetings, hr, approvals) — this is how the Groq LLM's classification maps to a workflow to trigger.
+
+5. Step-by-Step Execution Plan
+Phase 1 — Foundation (Days 1–2): Fix the infrastructure gaps
+The goal is to make the system actually work end-to-end before adding features.
+Bridge n8n to Railway. Expose your n8n instance publicly (ngrok for local dev, or deploy n8n on Railway as a separate service). Add N8N_BASE_URL, N8N_API_KEY, and BACKEND_PUBLIC_URL to your Railway environment. Wire orchestration.py to make real HTTP calls using these values.
+Fix the webhook callback receiver. Add POST /api/webhooks/n8n/callback/{execution_id} to internal.py. This endpoint verifies a shared secret header, then updates the execution_logs row to completed or failed with the result payload.
+Add the n8n "report back" node to your existing workflows. Every workflow in n8n gets a final HTTP Request node that POSTs to your callback URL. This is the critical loop-closer.
+Run your Alembic migrations against Railway Postgres. Verify execution_logs, users, google_tokens, workflows tables all exist.
+Phase 2 — Integration (Days 3–4): Real data flows
+Replace mock API responses in the frontend. Remove the catch blocks in hr.js, invoices.js, and meetings.js that return mock data. Add a proper error boundary in React that shows an error state rather than silent failure.
+Add the execution polling endpoint. GET /api/executions/{execution_id} returns the current status and result. The frontend polls this every 3 seconds after submitting a workflow request, showing a StatusStepper (you already have this component) while waiting.
+Wire the workflow discovery endpoint. On backend startup, call GET /api/v1/workflows on n8n, fetch active workflow names and IDs, and upsert them into your workflows table. Expose GET /api/workflows for the frontend sidebar to show real active workflows.
+Fix the auth simulation. At minimum, change the landing page to actually redirect to /api/auth/google instead of the hardcoded email. The OAuth callback in auth.py already handles the Google flow and token upsert — it just never gets called.
+Phase 3 — Workflow Automation (Days 5–6): Natural language intent
+Add the chat interface to the frontend. This is the most visible capstone feature. A ChatPage (new route /chat) with a message input, a connector selector (existing connectors the user has enabled), and a message thread showing requests and their status. When the user submits a natural language message, it POSTs to POST /api/chat/message.
+Add the intent routing endpoint on the backend. POST /api/chat/message receives the user's text and selected connectors, calls Groq/Llama with a system prompt that maps intent to one of your domain routers (invoice, meeting, hr, approval), then triggers the corresponding n8n workflow with the extracted parameters. You already have the Groq client and domain router pattern — this is connecting them.
+Add the workflow sidebar state. The sidebar currently shows static nav links. Add a collapsible "Active Workflows" section that calls GET /api/executions?user_email=X&status=running and shows live execution cards with status indicators.
+Phase 4 — Polish for Demo (Day 7): Make it presentable
+Fix the broken logo URL. Replace k42pj7ep_image.pngb with a valid asset or use the SVG gear fallback permanently. Presenters always notice console errors.
+Add the Codex execution callback nodes to all n8n workflows. Every workflow needs the final HTTP Request node pointing to your callback URL. Do this systematically — one at a time, test each one.
+Add error toasts for real failures. The sonner Toaster is already wired in App.js. Use it to show errors when workflows fail via the callback.
+Smoke test the full loop: user submits invoice request → FastAPI creates execution record → n8n processes invoice → n8n posts callback → execution updates to completed → frontend shows result. Time this; it should complete in under 10 seconds for a demo.
+
+6. Frontend Prompt (for Emergent)
+You are extending an existing React frontend for an office automation platform called Spatial+.
+
+EXISTING CODE BASE:
+- React + CRACO + Tailwind + Shadcn UI (all installed)
+- Design system: sidebar bg #0F172A, primary orange #F97316, fonts Outfit + Plus Jakarta Sans
+- Existing pages: Dashboard, InvoiceManager, MeetingSummarizer, ApprovalCenter, HRConnect, Settings, LandingPage
+- Existing components: Sidebar, TopBar, UploadZone, StatusStepper, ApprovalCard, EmptyStates, Skeletons
+- All Shadcn primitives available: Card, Button, Dialog, Badge, Tabs, Table, Input, Textarea, Select, Sheet, Progress
+
+ADD THESE THREE NEW FEATURES only. Do not rebuild existing pages.
+
+FEATURE 1 — ChatPage (/chat)
+Add a new route /chat to App.js inside the ProtectedRoute + DashboardLayout wrapper.
+Add "Automation Chat" nav link to Sidebar.jsx between Dashboard and Invoice Manager, using the MessageSquare icon from lucide-react.
+
+ChatPage layout:
+- Left panel (w-72, fixed): ConnectorPanel — vertical list of connector cards the user can toggle on/off. Each card shows connector name, an icon, and a toggle switch (Switch from Shadcn). Connectors: Gmail, Google Drive, Google Calendar, Google Sheets, HR System. When toggled on, the card shows an active green border.
+- Right panel (flex-1): MessageThread area + MessageInput at bottom, pinned like a chat app.
+
+MessageThread: scrollable list of message bubbles. User messages align right (bg-orange-500 text-white rounded-2xl rounded-br-sm). Bot/system messages align left (bg-white border border-slate-200 rounded-2xl rounded-bl-sm). Each system message can contain a WorkflowStatusCard (see below).
+
+WorkflowStatusCard: a compact card inside a bot message showing:
+- Workflow name (e.g. "Invoice Processing")
+- Status badge (pending=amber, running=blue with spinner, completed=green, failed=red)
+- A Progress bar (Shadcn Progress) showing 0% pending, 50% running, 100% done
+- A timestamp
+
+MessageInput: fixed bottom bar with a Textarea (auto-resize, max 4 lines), a "Send" button (orange), and a small connector pills row above showing which connectors are currently active.
+
+State: useChat hook in src/hooks/useChat.js managing messages array and connectorStates object.
+API: chatApi in src/api/chat.js with postMessage(text, activeConnectors) calling POST /api/chat/message and pollExecution(executionId) calling GET /api/executions/{id} every 3 seconds until status is completed or failed.
+
+FEATURE 2 — Sidebar Active Workflows section
+Below the nav links in Sidebar.jsx, add an "Active Workflows" collapsible section (use Collapsible from Shadcn). It should:
+- Show a header "Active workflows" with a count badge (amber if count > 0)
+- List up to 5 running executions fetched from GET /api/executions?status=running
+- Each item: workflow name, domain icon, a pulsing blue dot for running status, relative time
+- Poll every 10 seconds
+
+FEATURE 3 — Settings page: Connected Accounts
+The existing SettingsPage likely has a placeholder. Add a "Connected Accounts" tab section showing:
+- A row for each connector: Gmail, Google Drive, Calendar, Sheets
+- Each row: connector logo placeholder (colored icon), name, status (Connected/Not connected), a Connect or Disconnect button
+- Clicking Connect for Gmail/Google redirects to /api/auth/google
+- Use realistic data-testid attributes on all interactive elements
+
+STYLE RULES (existing design system, do not deviate):
+- sidebar bg-[#0F172A], active nav: bg-slate-800 border-l-2 border-orange-500
+- Primary button: bg-orange-500 hover:bg-orange-600
+- Cards: bg-white border border-slate-200 rounded-lg shadow-sm
+- Status colors: pending=amber, running=blue, completed=emerald, failed=red
+- Font headings: font-outfit, body: font-jakarta (Plus Jakarta Sans)
+- All interactive elements must have data-testid attributes
+- No lorem ipsum, use realistic office automation copy
+
+7. Backend Prompt (for Codex)
+You are implementing specific new endpoints and fixing critical integration gaps in an existing FastAPI + PostgreSQL backend for an office automation platform.
+
+EXISTING ARCHITECTURE (do not restructure):
+- main.py: FastAPI app, registers domain routers
+- orchestration.py: n8n HTTP helpers and execution logging
+- database.py: SQLAlchemy async session factory
+- routers/: auth.py, dashboard.py, invoices.py, hr.py, meetings.py, approvals.py, admin.py, internal.py
+- All SQL migrations exist in db/migrations/
+- Railway Postgres is the database
+
+ENVIRONMENT VARIABLES (add these to Railway, read via settings/config):
+- N8N_BASE_URL: base URL of the n8n instance
+- N8N_API_KEY: n8n API key for REST API calls
+- BACKEND_PUBLIC_URL: public URL of this FastAPI service (for callback URLs)
+- N8N_CALLBACK_SECRET: shared secret for validating n8n callback requests
+
+TASK 1 — Fix orchestration.py: real n8n trigger
+Replace the stub trigger function with a real async implementation:
+
+async def trigger_n8n_workflow(workflow_id: str, payload: dict, execution_id: str) -> dict:
+    """Trigger an n8n workflow via REST API and register callback URL."""
+    headers = {"X-N8N-API-KEY": settings.N8N_API_KEY, "Content-Type": "application/json"}
+    callback_url = f"{settings.BACKEND_PUBLIC_URL}/api/webhooks/n8n/callback/{execution_id}"
+    body = {"workflowData": {**payload, "_callback_url": callback_url, "_execution_id": execution_id}}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{settings.N8N_BASE_URL}/api/v1/workflows/{workflow_id}/run",
+            json=body, headers=headers
+        )
+        resp.raise_for_status()
+    return resp.json()
+
+Also add:
+async def update_execution_status(db, execution_id: str, status: str, result: dict = None, error: str = None):
+    """Update execution_logs row. status must be one of: pending, running, completed, failed, timeout."""
+
+TASK 2 — Add to routers/internal.py: n8n callback receiver
+
+POST /api/webhooks/n8n/callback/{execution_id}
+
+Validates X-N8N-Callback-Secret header against settings.N8N_CALLBACK_SECRET (return 403 if mismatch).
+Reads body: {"status": "success"|"error", "data": {...}, "error": "message if error"}
+Maps n8n status to execution status: success → completed, error → failed.
+Calls update_execution_status().
+Returns {"received": true}.
+
+TASK 3 — Add routers/chat.py: natural language intent router
+
+POST /api/chat/message
+Request body: {"text": str, "active_connectors": list[str], "user_email": str}
+
+Implementation:
+1. Call Groq API with llama-3.1-8b-instant model. System prompt:
+   "You are an intent classifier for an office automation system. Given a user's request, extract:
+   - domain: one of [invoice, meeting, hr, approval, general]  
+   - action: short snake_case action name (e.g. process_invoice, summarize_meeting, send_offer_letter)
+   - parameters: dict of extracted parameters from the user's text
+   Respond ONLY with a valid JSON object: {domain, action, parameters}. No other text."
+   
+2. Parse the JSON response. If parsing fails, return domain=general.
+
+3. Look up the workflow ID from the workflows table where domain matches and status='active'.
+   If none found, return {"message": "No workflow configured for this request.", "execution_id": null}
+
+4. Create an execution_logs record with status='pending', input_payload={text, parameters, active_connectors}.
+
+5. Call trigger_n8n_workflow(workflow_id, parameters, execution_id).
+
+6. Update execution status to 'running'.
+
+7. Return: {"execution_id": str, "domain": str, "action": str, "message": "Workflow started. Tracking execution {id}."}
+
+GET /api/executions/{execution_id}
+Returns the current execution_logs row as JSON. Used by frontend polling.
+Validates that the execution belongs to the requesting user (via X-User-Email header).
+
+GET /api/executions
+Query params: user_email, status (optional), limit (default 20)
+Returns list of executions for the user, ordered by started_at desc.
+
+TASK 4 — Add to routers/internal.py: workflow sync from n8n
+
+POST /api/admin/sync-workflows (admin only, requires X-Admin-Key header)
+Calls GET {N8N_BASE_URL}/api/v1/workflows with the API key.
+Upserts each active workflow into the workflows table using n8n workflow ID as the deduplication key.
+Maps n8n workflow name to a domain using a name-to-domain mapping dict (configure this manually based on your workflow names).
+Returns count of workflows synced.
+
+TASK 5 — Add migration: 010_create_workflows_table.sql
+
+CREATE TABLE workflows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    name VARCHAR(255) NOT NULL,
+    n8n_workflow_id VARCHAR(255) NOT NULL UNIQUE,
+    domain VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    default_params JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_workflows_domain ON workflows(domain);
+CREATE INDEX idx_workflows_status ON workflows(status);
+
+Also update 001_create_execution_logs.sql (or add a new migration) to add:
+- workflow_id UUID column (nullable FK to workflows.id)
+- result_payload JSONB column
+- status should be constrained: CHECK (status IN ('pending', 'running', 'completed', 'failed', 'timeout'))
+
+TASK 6 — Fix routers/auth.py: remove hardcoded redirect for demo
+
+Ensure the Google OAuth callback correctly:
+1. Receives the Google auth code
+2. Exchanges it for access + refresh tokens
+3. Upserts into google_tokens table
+4. Redirects to /?success=true&email={user_email}
+
+The frontend LandingPage already handles this redirect pattern correctly — just make sure the backend callback produces it.
+
+TASK 7 — Add connector credentials endpoints to routers/auth.py or a new connectors.py
+
+GET /api/connectors: returns list of connector types and whether a credential exists for this user
+POST /api/connectors/{connector_type}/connect: triggers n8n OAuth flow for the connector type
+DELETE /api/connectors/{connector_type}: calls n8n DELETE /api/v1/credentials/{id} and removes the local reference
+
+TESTING:
+Write tests in tests/test_chat_flow.py covering:
+- Intent classification returns valid domain for "Process this invoice from Acme Corp"
+- Callback endpoint rejects invalid secret
+- Callback endpoint updates execution status correctly
+- Execution polling returns 404 for unknown execution_id
+- Execution polling returns 403 if user_email doesn't match execution owner
+
+Final Priorities for Your Demo
+If you only have time for the most impactful fixes in order: bridge n8n to Railway (1), add the callback receiver (2), wire the chat page (3), fix the auth simulation (4), remove silent error swallowing (5). The rest is polish. The chat interface with real n8n execution is the feature that will make the demo compelling — everything else is infrastructure that makes it honest.According to the steps that you have provided which steps should I start with first and then for the whole project12 AprBased on your codebase and where things actually stand, here's the precise order:
+Start Here — Right Now (Today)
+Step 1: Bridge n8n to Railway — this unblocks everything else. Nothing works without it.
+
+Get your n8n instance publicly accessible (ngrok if local, or add n8n as a Railway service)
+Add these to Railway environment variables:
+
+N8N_BASE_URL
+N8N_API_KEY
+BACKEND_PUBLIC_URL
+N8N_CALLBACK_SECRET
+
+
+Wire orchestration.py to use them (the code from the Codex prompt, Task 1)
+
+Step 2: Run your Alembic migrations — your Railway Postgres likely doesn't have all tables yet. Run 010_create_workflows_table.sql and verify all 9 existing migrations are applied.
+Step 3: Add the n8n callback receiver — Task 2 from the Codex prompt. Without this, n8n has nowhere to report results and every workflow is fire-and-forget.
+
+Full Project Order (Sequenced by Dependency)
+Here's the complete sequence as a dependency chain:
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+VvisualizeVvisualize show_widgetThe One Rule to Follow
+Never move to the next phase until the smoke test for the current one passes. The most common capstone mistake is building the chat UI (Phase 3) before the callback loop (Phase 1) works, then discovering on demo day that nothing actually completes.
+The critical path is steps 1 → 3 → 4 → 5 → 6. If those six steps work — n8n is reachable, a workflow triggers, and the callback updates your database — you have a real system. Everything after that is features on top of a working foundation.
+Start with step 1 right now. Do you have n8n running locally or already deployed somewhere?I am currently running n8n on docker12 AprGood. Docker-local n8n means you need to expose it so Railway can reach it. Here's exactly what to do:
+Your Current Problem
+Railway FastAPI → ??? → localhost:5678 (n8n in Docker)
+Railway is in the cloud. Your Docker n8n is on your machine. They can't talk to each other yet. You need a tunnel.
+Step 1 — Install ngrok and expose n8n
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+VvisualizeVvisualize show_widgetStep 2 — Set Railway Environment Variables
+Once ngrok is running and you have your n8n API key, go to your Railway FastAPI service → Variables tab and add these:
+N8N_BASE_URL=https://abc123.ngrok-free.app     ← your ngrok URL (no trailing slash)
+N8N_API_KEY=your_n8n_api_key_here
+BACKEND_PUBLIC_URL=https://your-fastapi.railway.app  ← your Railway service URL
+N8N_CALLBACK_SECRET=make_up_a_long_random_string_here
+Step 3 — Verify the connection
+Once both are set, test that Railway can actually reach n8n:
+bash# Run this from anywhere — if it returns your workflow list, you're connected
+curl -H "X-N8N-API-KEY: your_api_key" https://abc123.ngrok-free.app/api/v1/workflows
+You should get back a JSON list of your workflows. If you get a 401, the API key is wrong. If you get a connection error, ngrok isn't running.
+Step 4 — Update your docker-compose for n8n (if you have one)
+If you're using docker-compose.yml for n8n, make sure it's set up like this so the API and webhook callbacks work correctly:
+yamlversion: '3'
+services:
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PUBLIC_API_DISABLED=false
+      - WEBHOOK_URL=https://abc123.ngrok-free.app   # ← your ngrok URL
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+    volumes:
+      - n8n_data:/home/node/.n8n
+volumes:
+  n8n_data:
+The WEBHOOK_URL line is critical — it tells n8n what base URL to use when constructing webhook URLs, so they point to your ngrok tunnel instead of localhost.
+
+Once This Works — What To Do Next
+Come back here and confirm:
+
+docker ps shows n8n running on port 5678
+ngrok is running and you have the URL
+The curl test returns your workflow list
+
+Then we move immediately to Step 3 from the plan — fixing orchestration.py to make real calls. I'll give you the exact code to paste into Codex for that.
+What does your current docker ps output look like for the n8n container?I have done till this step where i can see my n8n running on the link provided, now guide me step by step from here
+I do not have a docker compose file for the current project till now12 AprPerfect. I can see everything clearly from your screenshots:
+
+ngrok is running: https://loneliest-voguishly-ivette.ngrok-free.dev → localhost:5678
+n8n container is stopped (grey circle, no CPU %)
+You also have office_postgres, final-year (your backend), and backend containers — all stopped
+
+Two things to fix before anything else:
+Problem 1 — n8n container is not running
+Click the ▷ play button next to the n8n container in Docker Desktop to start it. Wait for the circle to turn green, then confirm it's up by visiting http://localhost:5678 in your browser.
+Problem 2 — ngrok is tunneling but n8n is stopped
+That's why ngrok shows 401 Unauthorized on /rest/login — n8n wasn't running when you tried to access it. Once n8n is started, the ngrok tunnel will work.
+
+Now — Generate your n8n API Key
+Once n8n is running at http://localhost:5678:
+
+Log into n8n
+Go to Settings (bottom left) → API
+Click Create API Key
+Copy it — you'll need it in the next step
+
+
+Create your docker-compose.yml now
+Since you don't have one, create it. This lets you start everything with one command and sets the critical WEBHOOK_URL environment variable that tells n8n to use your ngrok URL for webhooks.
+Create a file called docker-compose.yml in your project root:
+yamlversion: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://loneliest-voguishly-ivette.ngrok-free.dev
+      - N8N_PUBLIC_API_DISABLED=false
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
+    external: true
+    name: n8n_data
+The volumes: external: true line tells Docker Compose to use your existing n8n data volume so you don't lose your workflows.
+Verify the volume name first — run this in your terminal:
+bashdocker volume ls | grep n8n
+It will show something like n8n_data or final-year_n8n_data. Use whatever name appears in the output for the name: field.
+
+Start n8n via docker-compose
+bash# Stop the existing n8n container first (via Docker Desktop play/stop button)
+# Then start via compose:
+docker-compose up -d n8n
+Then verify n8n is reachable through ngrok:
+bashcurl -H "X-N8N-API-KEY: YOUR_API_KEY_HERE" https://loneliest-voguishly-ivette.ngrok-free.dev/api/v1/workflows
+You should get back a JSON array of your workflows. Tell me what it returns and we'll move straight to wiring Railway.s\Office_automation> Invoke-WebRequest `                              >>   -Uri "https://loneliest-voguishly-ivette.ngrok-free.dev/api/v1/workflows" `              
+>>   -Headers @{ "X-N8N-API-KEY" = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNjNmMWZlYy0yN2Y2LTQ0MzItYWRiMS0xM2UzM2ZlZDBlYTEiLpastedSince i am running on poweshell commands this is what i got after doing the above:12 AprI can see the issue. You're getting ERR_NGROK_6024 — this is ngrok's browser warning page intercepting the request. It's a known ngrok free tier issue where the first request to the tunnel from a non-browser gets a warning page instead of the actual content.
+Fix it with one header:
+The Fix — Add ngrok-skip-browser-warning header
+powershellInvoke-WebRequest `
+  -Uri "https://loneliest-voguishly-ivette.ngrok-free.dev/api/v1/workflows" `
+  -Headers @{ 
+    "X-N8N-API-KEY" = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNjNmMWZlYy0yN2Y2LTQ0MzItYWRiMS0xM2UzM2ZlZDBlYTEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiY2IyMjI3YWUtYWE0MC00Nzc5LWIxOTEtNWU4NTlkODU0Yzc1IiwiaWF0IjoxNzc2MDE0NDQyLCJleHAiOjE3Nzg1MjQyMDB9.DVBgmqfqJ22GUayQ6qpIjck8svY0lNRv7KTC_3_YBHs";
+    "ngrok-skip-browser-warning" = "true"
+  } `
+  -UseBasicParsing
+Two changes from before: added "ngrok-skip-browser-warning" = "true" and added -UseBasicParsing (which also suppresses the PowerShell security prompt).
+
+Run that and paste what comes back. You should get a JSON response like:
+json{"data": [{"id": "abc123", "name": "HR Workflow", ...}, ...], "nextCursor": null}
+That confirms Railway will be able to reach n8n too — because Railway's calls will include this same header automatically once we add it to orchestration.py.I got this:
+(.venv) PS C:\Users\danis\Office_automation> Invoke-WebRequest                                           
+>>   -Uri "https://loneliest-voguishly-ivette.ngrok-free.dev/api/v1/workflows"                           
+>>   -Headers @{
+>>     "X-N8N-API-KEY" = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNjNmMWZlYy0yN2Y2LTQ0MzItYWRiMS0xM2UzM2ZlZDBlYTEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiY2IyMjI3YWUtY           YWE0MC00Nzc5LWIxOTEtNWU4NTlkODU0Yzc1IiwiaWF0IjoxNzc2MDE0NDQyLCJleHAiOjE3Nzg1MjQyMDB9.DVBgmqfqJ2           22GUayQ6qpIjck8svY0lNRv7KTC_3_YBHs";
+>>     "ngrok-skip-browser-warning" = "true"
+>>   } `
+>>   -UseBasicParsing
+StatusCode        : 200
+StatusDescription : OK
+Content           : {"data":[{"updatedAt":"2026-03-09T14:37:53.294Z","createdAt":"2026-03-09T 
+                    14:32:42.997Z","id":"94GG09LQXNYPlfPX","name":"AI-Workflow-Compiler (LLM  
+                    Enhanced)","active":false,"isArchived":false,"nodes":[...
+RawContent        : HTTP/1.1 200 OK
+                    Vary: Accept-Encoding
+                    Transfer-Encoding: chunked
+                    Content-Type: application/json; charset=utf-8
+                    Date: Sun, 12 Apr 2026 17:39:03 GMT
+                    ETag: W/"5fac-X/xd1lQENDzUGLDW1cCEj511vU4"
+                    {"...
+Forms             :
+Headers           : {[Vary, Accept-Encoding], [Transfer-Encoding, chunked], [Content-Type,    
+                    application/json; charset=utf-8], [Date, Sun, 12 Apr 2026 17:39:03        
+                    GMT]...}
+Images            : {}
+InputFields       : {}
+Links             : {}
+ParsedHtml        :
+RawContentLength  : 24492
+(.venv) PS C:\Users\danis\Office_automation>Show more12 AprThat's the green light. StatusCode 200, JSON data back, 24KB of workflow data. Railway can now reach your n8n.
+Here's what we have confirmed:
+
+✅ ngrok tunnel working
+✅ n8n API key valid
+✅ Workflows returning (I can see AI-Workflow-Compiler in the response)
+
+
+Now set the Railway Environment Variables
+Go to Railway dashboard → your FastAPI service → Variables tab → add these one by one:
+N8N_BASE_URL = https://loneliest-voguishly-ivette.ngrok-free.dev
+N8N_API_KEY  = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNjNmMWZlYy0yN2Y2LTQ0MzItYWRiMS0xM2UzM2ZlZDBlYTEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiY2IyMjI3YWUtYWE0MC00Nzc5LWIxOTEtNWU4NTlkODU0Yzc1IiwiaWF0IjoxNzc2MDE0NDQyLCJleHAiOjE3Nzg1MjQyMDB9.DVBgmqfqJ22GUayQ6qpIjck8svY0lNRv7KTC_3_YBHs
+N8N_CALLBACK_SECRET = office_auto_secret_2026
+For BACKEND_PUBLIC_URL, go to your Railway FastAPI service → Settings → copy the public domain. It looks like https://something.railway.app. Add it:
+BACKEND_PUBLIC_URL = https://your-actual-service.railway.app
+
+Now fix orchestration.py — give this entire prompt to Codex
+In the file orchestration.py, make the following changes:
+
+1. At the top, add these imports if not present:
+   import httpx
+   import os
+   from uuid import uuid4
+
+2. Add a settings block reading from environment variables:
+   N8N_BASE_URL = os.getenv("N8N_BASE_URL", "")
+   N8N_API_KEY = os.getenv("N8N_API_KEY", "")
+   BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "")
+   N8N_CALLBACK_SECRET = os.getenv("N8N_CALLBACK_SECRET", "")
+
+3. Add this function (replace any existing stub with the same name):
+
+async def trigger_n8n_workflow(workflow_id: str, payload: dict, execution_id: str) -> dict:
+    """Trigger an n8n workflow via REST API and register a callback URL."""
+    if not N8N_BASE_URL or not N8N_API_KEY:
+        raise ValueError("N8N_BASE_URL and N8N_API_KEY must be set in environment")
+    
+    headers = {
+        "X-N8N-API-KEY": N8N_API_KEY,
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true"
+    }
+    callback_url = f"{BACKEND_PUBLIC_URL}/api/webhooks/n8n/callback/{execution_id}"
+    body = {
+        "workflowData": {
+            **payload,
+            "_callback_url": callback_url,
+            "_execution_id": execution_id
+        }
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{N8N_BASE_URL}/api/v1/workflows/{workflow_id}/run",
+            json=body,
+            headers=headers
+        )
+        resp.raise_for_status()
+    return resp.json()
+
+4. Add this function:
+
+async def get_n8n_workflows() -> list:
+    """Fetch all active workflows from n8n. Used for workflow sync."""
+    if not N8N_BASE_URL or not N8N_API_KEY:
+        return []
+    headers = {
+        "X-N8N-API-KEY": N8N_API_KEY,
+        "ngrok-skip-browser-warning": "true"
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{N8N_BASE_URL}/api/v1/workflows",
+            headers=headers
+        )
+        resp.raise_for_status()
+    data = resp.json()
+    return data.get("data", [])
+
+5. Add this function:
+
+async def update_execution_status(
+    db,
+    execution_id: str,
+    status: str,
+    result: dict = None,
+    error: str = None
+):
+    """Update execution_logs row status. 
+    status must be one of: pending, running, completed, failed, timeout"""
+    import json
+    from datetime import datetime, timezone
+    
+    valid_statuses = {"pending", "running", "completed", "failed", "timeout"}
+    if status not in valid_statuses:
+        raise ValueError(f"Invalid status: {status}. Must be one of {valid_statuses}")
+    
+    update_fields = {
+        "status": status,
+        "updated_at": datetime.now(timezone.utc)
+    }
+    if result is not None:
+        update_fields["result_payload"] = json.dumps(result)
+    if error is not None:
+        update_fields["error_message"] = error
+    if status in ("completed", "failed", "timeout"):
+        update_fields["completed_at"] = datetime.now(timezone.utc)
+    
+    await db.execute(
+        """UPDATE execution_logs 
+           SET status = :status,
+               updated_at = :updated_at
+               {result_clause}
+               {error_clause}
+               {completed_clause}
+           WHERE id = :execution_id""".format(
+            result_clause=", result_payload = :result_payload" if result is not None else "",
+            error_clause=", error_message = :error_message" if error is not None else "",
+            completed_clause=", completed_at = :completed_at" if status in ("completed", "failed", "timeout") else ""
+        ),
+        {"execution_id": execution_id, **update_fields}
+    )
+    await db.commit()
+
+Keep all existing functions in the file. Only add or replace what is listed above.
+
+While Codex works on that — run your migrations
+Open a new PowerShell terminal in your project folder and run:
+powershell# Check which tables currently exist on Railway Postgres
+python scripts/list_tables.py
+Paste the output here. I need to see which migrations have already been applied before we add migration 010 for the workflows table.
+Once you paste the table list and Codex finishes orchestration.py, we move to adding the callback receiver endpoint — that's the last piece of Phase 1.This is what i currently have on my dashboard which a previous project setup but never used13 AprThis changes things significantly. You already have n8n deployed on Railway — you don't need ngrok at all. This is actually better — it's a permanent URL that never changes.
+I can see:
+
+n8n (w/ postgres) service — has its own Postgres connected, URL is n8n-production-b3aa.up.rail...
+A separate Postgres service (sleeping)
+A Postgres-3uG5 service (sleeping)
+
+Step 1 — Wake up your Railway n8n
+Click on the n8n service inside the n8n (w/ postgres) group → click Deploy or Restart. Wait for it to go from "Sleeping" to "Active".
+Once it's active, click on it and go to Settings → copy the full public URL. It will look like:
+https://n8n-production-b3aa.up.railway.app
+Step 2 — Get your Railway n8n API key
+Once n8n is running, open that URL in your browser → log into n8n → Settings → API → Create API Key → copy it.
+Step 3 — Figure out which Postgres your FastAPI should use
+You have two Postgres instances sleeping. Click each one and check their Variables tab for the DATABASE_URL. One of them is likely already connected to your FastAPI backend.
+Tell me:
+
+What is the full n8n public URL once it wakes up?
+Which Postgres has your FastAPI's DATABASE_URL pointing to it? (Check your FastAPI service Variables tab and look for DATABASE_URL or POSTGRES_URL)
+
+Then we set three variables in your FastAPI service and move straight to fixing orchestration.py. We can also stop ngrok entirely — you won't need it anymore since n8n is already in the cloud.These configurations on railway was for a different project i had i have not connected any of them to the current incomplete project13 AprGot it. So your current situation is:
+What you actually have:
+
+✅ FastAPI backend — on Railway (your current project)
+✅ PostgreSQL — on Railway (your current project)
+✅ n8n — running locally in Docker
+✅ ngrok — tunneling n8n at https://loneliest-voguishly-ivette.ngrok-free.dev
+✅ API connection confirmed working
+
+So the ngrok approach is correct for now. Ignore that old Railway project entirely.
+
+The Decision You Need to Make Right Now
+You have two options for n8n. Pick one before we write any code:
+Option A — Keep n8n local with ngrok (faster to set up, has one risk)
+
+Pros: zero cost, works today, no migration needed
+Con: ngrok URL changes every time you restart it, and your free tier session will eventually expire
+Risk for demo: if your laptop sleeps or ngrok restarts during the demo, everything breaks
+
+Option B — Deploy your local Docker n8n to Railway (more stable, takes ~30 mins)
+
+Pros: permanent URL, no laptop dependency, survives restarts
+Con: costs a small amount on Railway (~$5/month), takes time to migrate your workflows
+Best for: demo day reliability
+
+My recommendation for a capstone demo: Option B. Your existing workflows and credentials will need to be exported and re-imported, but you get a URL that never changes and a demo that doesn't depend on your laptop staying awake.
+While you decide — can you also open your Railway FastAPI service → Variables tab and tell me what environment variables are already set there? Specifically looking for anything with DATABASE, POSTGRES, or GROQ in the name. That tells us how much of the backend config is already done.Q: Which option do you want to go with for n8n?
+A: Option B — Deploy n8n to Railway (stable, 30 mins setup)13 AprGood choice. Here's the exact process step by step.
+Step 1 — Export your workflows from local n8n
+Open http://localhost:5678 in your browser → log in → for each workflow:
+Settings (bottom left) → Import/Export → Export all workflows → save the JSON file somewhere safe. This is your backup.
+
+Step 2 — Export your credentials too
+In local n8n → Settings → Export → export credentials as well. Keep this file — you'll re-enter them manually on Railway (n8n doesn't export credential secrets for security reasons, so you'll need to reconnect OAuth).
+
+Step 3 — Deploy n8n on Railway
+Go to your current Railway project (the one with your FastAPI and Postgres) → click + Add → New Service → Docker Image → enter:
+n8nio/n8n
+Railway will pull the image and create the service.
+
+Step 4 — Add a volume to the n8n service
+In the new n8n service → Settings → Volumes → Add Volume:
+Mount path: /home/node/.n8n
+This persists your workflows and credentials across restarts.
+
+Step 5 — Set environment variables on the Railway n8n service
+Click the n8n service → Variables → add all of these:
+N8N_HOST                    = 0.0.0.0
+N8N_PORT                    = 5678
+N8N_PROTOCOL                = https
+N8N_ENCRYPTION_KEY          = make_up_any_32_char_random_string_here
+GENERIC_TIMEZONE            = Asia/Kolkata
+N8N_SECURE_COOKIE           = false
+N8N_PUBLIC_API_DISABLED     = false
+WEBHOOK_URL                 = https://YOUR-N8N-SERVICE.up.railway.app
+For WEBHOOK_URL — Railway will assign a public domain to the n8n service. Go to the n8n service → Settings → Networking → Generate Domain → copy that URL and use it for WEBHOOK_URL.
+For N8N_ENCRYPTION_KEY — generate a random string right now in PowerShell:
+powershell-join ((65..90) + (97..122) + (48..57) | Get-Random -Count 32 | % {[char]$_})
+
+Step 6 — Connect n8n to your existing Railway Postgres
+Your FastAPI already has a Postgres on Railway. n8n can use the same Postgres instance with a separate database.
+Click your Postgres service on Railway → Variables tab → copy the DATABASE_URL. It looks like:
+postgresql://postgres:password@hostname.railway.internal:5432/railway
+Now go back to the n8n service Variables and add:
+DB_TYPE                = postgresdb
+DB_POSTGRESDB_HOST     = hostname.railway.internal   ← from your DATABASE_URL
+DB_POSTGRESDB_PORT     = 5432
+DB_POSTGRESDB_DATABASE = n8n                         ← use a DIFFERENT db name than your app
+DB_POSTGRESDB_USER     = postgres                    ← from your DATABASE_URL
+DB_POSTGRESDB_PASSWORD = password                    ← from your DATABASE_URL
+
+Step 7 — Deploy and verify
+Railway will auto-deploy once you save the variables. Watch the Deploy Logs tab. You should see:
+n8n ready on 0.0.0.0, port 5678
+Then open the Railway-assigned n8n URL in your browser → you should see the n8n login screen.
+
+Step 8 — Import your workflows
+Log into Railway n8n → Settings → Import → upload the JSON file you exported in Step 1. All your workflows will appear.
+
+Step 9 — Reconnect credentials
+Go through each credential in n8n (Gmail, Google Sheets, etc.) and reconnect them via OAuth. The workflow structure imports fine — only the secret tokens need re-authorizing.
+
+Step 10 — Generate your Railway n8n API key
+Railway n8n → Settings → API → Create API Key → copy it.
+
+Once all 10 steps are done, add these to your FastAPI Railway service Variables:
+N8N_BASE_URL         = https://YOUR-N8N-SERVICE.up.railway.app
+N8N_API_KEY          = your_new_api_key
+N8N_CALLBACK_SECRET  = office_auto_secret_2026
+BACKEND_PUBLIC_URL   = https://your-fastapi-service.up.railway.app
+
+Tell me when you hit Step 5 and have the Railway n8n URL — I'll help you verify the domain and variable values before you proceed. What does your current Railway project look like (how many services, what are they named)?should i delete the current services for the previous project and then follow these steps13 AprNo, don't delete them. That n8n is already Online with a Postgres connected — this is actually perfect. You can reuse this entire setup for your current project. It saves you 30 minutes of setup.
+Here's what you actually have:
+
+✅ n8n — Online at n8n-production-b3aa.up.railway.app
+✅ Postgres — Online, already connected to n8n
+Postgres-3uG5 — Sleeping, ignore this one
+
+
+What to do instead — just reuse this n8n
+Click on the n8n service inside the n8n (w/ postgres) group → go to its Variables tab → paste what you see there (redact passwords). I need to check two things:
+
+Whether N8N_PUBLIC_API_DISABLED is set (needs to be false)
+Whether WEBHOOK_URL is set correctly
+
+Then open the n8n URL in your browser:
+https://n8n-production-b3aa.up.railway.app
+Can you log in? If yes, go to Settings → API → Create API Key and copy it.
+
+Then do Steps 1 and 2 from before — export from local n8n
+While you check the Railway n8n variables, go to your local n8n at http://localhost:5678:
+
+Settings → Export all workflows → save the JSON
+Note down any credentials you have configured (Gmail, Google Sheets etc.) — you'll reconnect these on Railway n8n
+
+
+Your target setup after this
+Your current project (Railway)
+├── FastAPI backend          ← already here
+├── PostgreSQL (app DB)      ← need to identify which one serves your FastAPI
+│
+Overflowing-clarity project (Railway)  
+├── n8n                      ← already Online, reuse this
+└── Postgres (n8n DB)        ← already connected to n8n, leave it
+The two Railway projects can talk to each other fine — your FastAPI just calls the n8n URL over HTTPS. They don't need to be in the same project.
+Go check those two things and report back:
+
+What variables are set on the Railway n8n service?
+Can you log into https://n8n-production-b3aa.up.railway.app?
+This is the actual n8n variables already set:
+DB_POSTGRESDB_DATABASE="${{Postgres.PGDATABASE}}" DB_POSTGRESDB_HOST="${{Postgres.PGHOST}}" DB_POSTGRESDB_PASSWORD="${{Postgres.PGPASSWORD}}" DB_POSTGRESDB_PORT="${{Postgres.PGPORT}}" DB_POSTGRESDB_USER="${{Postgres.PGUSER}}" DB_TYPE="postgresdb" N8N_ENCRYPTION_KEY="j1nhte2gqptih5r4842ueboonle2xok8" N8N_PORT="5678" PORT="5678" WEBHOOK_URL="https://n8n-production-b3aa.up.railway.app" N8N_BASIC_AUTH_USER="Shah_Danish" N8N_BASIC_AUTH_PASSWORD="1092@Abab" N8N_EDITOR_BASE_URL="https://n8n-production-b3aa.up.railway.app" DB_POSTGRESDB_SCHEMA="public" N8N_API_DISABLED="false" N8N_BASIC_AUTH_ACTIVE="true" N8N_EXPRESS_TRUST_PROXY="true" N8N_HOST="0.0.0.0" N8N_PROTOCOL="https" N8N_PROXY_HOPS="1"This is the postgres cariables setup:
+DATABASE_PUBLIC_URL="postgresql://${{PGUSER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_TCP_PROXY_DOMAIN}}:${{RAILWAY_TCP_PROXY_PORT}}/${{PGDATABASE}}" DATABASE_URL="postgresql://${{PGUSER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:5432/${{PGDATABASE}}" PGDATA="/var/lib/postgresql/data/pgdata" PGDATABASE="${{POSTGRES_DB}}" PGHOST="${{RAILWAY_PRIVATE_DOMAIN}}" PGPASSWORD="${{POSTGRES_PASSWORD}}" PGPORT="5432" PGUSER="${{POSTGRES_USER}}" POSTGRES_DB="railway" POSTGRES_PASSWORD="HNCHyfyQUjfuGTvVNqndXSZeFnKDZQXH" POSTGRES_USER="postgres" RAILWAY_DEPLOYMENT_DRAINING_SECONDS="60" SSL_CERT_DAYS="820"Show more13 AprEverything is already configured correctly. Here's what I can confirm:
+
+✅ n8n is fully configured with Postgres
+✅ WEBHOOK_URL is set to the Railway URL
+✅ N8N_API_DISABLED="false" — API is enabled
+✅ Basic auth is set (Shah_Danish / 1092@Abab)
+
+One issue: The variable is N8N_API_DISABLED but it should be N8N_PUBLIC_API_DISABLED. This might be why the API works or doesn't — we'll verify in a moment.
+
+Do these 4 things right now in order:
+1. Log into Railway n8n
+Open https://n8n-production-b3aa.up.railway.app in your browser. When prompted for basic auth, enter:
+
+Username: Shah_Danish
+Password: 1092@Abab
+
+2. Generate the API key
+Once inside n8n → bottom left Settings → API → Create API Key → copy it.
+3. Test the API from PowerShell
+powershellInvoke-WebRequest `
+  -Uri "https://n8n-production-b3aa.up.railway.app/api/v1/workflows" `
+  -Headers @{
+    "X-N8N-API-KEY" = "YOUR_NEW_API_KEY_HERE";
+    "Authorization" = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("Shah_Danish:1092@Abab"))
+  } `
+  -UseBasicParsing
+4. Import your local workflows
+In Railway n8n → Settings → Import from file → upload the JSON you exported from local n8n.
+
+Then set these variables on your FastAPI Railway service
+Once the API key test returns 200, go to your FastAPI service → Variables and add:
+N8N_BASE_URL            = https://n8n-production-b3aa.up.railway.app
+N8N_API_KEY             = your_api_key_from_step_2
+N8N_CALLBACK_SECRET     = office_auto_secret_2026
+BACKEND_PUBLIC_URL      = https://your-fastapi-service.up.railway.app
+N8N_BASIC_AUTH_USER     = Shah_Danish
+N8N_BASIC_AUTH_PASSWORD = 1092@Abab
+The last two are needed because your n8n has basic auth enabled — every API call from your backend needs to include those credentials too.
+
+Also — one critical fix needed in orchestration.py
+Because your n8n has basic auth, every httpx call needs an extra header. When Codex writes orchestration.py, make sure the headers block includes:
+pythonimport base64
+
+basic = base64.b64encode(
+    f"{N8N_BASIC_AUTH_USER}:{N8N_BASIC_AUTH_PASSWORD}".encode()
+).decode()
+
+headers = {
+    "X-N8N-API-KEY": N8N_API_KEY,
+    "Authorization": f"Basic {basic}",
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true"
+}
+Add N8N_BASIC_AUTH_USER and N8N_BASIC_AUTH_PASSWORD to the environment variable reads in orchestration.py alongside the others.
+
+Go log into the Railway n8n now and tell me — can you see your workflows there already, or is it empty and needs the import?This is what i am seeing:
+(.venv) PS C:\Users\danis\Office_automation> Invoke-WebRequest 
+>>   -Uri "https://n8n-production-b3aa.up.railway.app/api/v1/workflows" 
+>>   -Headers @{                                                                        >>     "X-N8N-API-KEY" = "                                                              >> eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0M2ZiODRkZS0yZDZjLTRhOTItOTQ5YS00ZWZlOGMyNTljMTEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiM2E4NDY2YWQtMzA3NC00NjE4LWJmMjktMzBlMDMyZWZiMDc3IiwiaWF0IjoxNzc2MDYxNzUwLCJleHAiOjE3Nzg2NDQ4MDB9.9Kov0xMqgC6B8SXVr02HRZmJc5mWZPYA__KUTa-lER0";
+>>     "Authorization" = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.Get
+Bytes("Shah_Danish:1092@Abab"))
+>>   } `
+>>   -UseBasicParsing
+StatusCode        : 200
+StatusDescription :
+Content           : {"data":[],"nextCursor":null}
+RawContent        : HTTP/1.1 200
+                    Connection: keep-alive
+                    x-railway-cdn-edge: fastly/cache-bom-vanm7210049-BOM
+                    vary: Accept-Encoding
+                    x-railway-edge: railway/asia-southeast1-eqsg3a
+                    x-railway-request-id: kGAkAYAiQqKnyf...
+Forms             :
+Headers           : {[Connection, keep-alive], [x-railway-cdn-edge,
+                    fastly/cache-bom-vanm7210049-BOM], [vary, Accept-Encoding],
+                    [x-railway-edge, railway/asia-southeast1-eqsg3a]...}
+Images            : {}
+InputFields       : {}
+Links             : {}
+ParsedHtml        :
+RawContentLength  : 29
+(.venv) PS C:\Users\danis\Office_automation> Also i wanted to let you know that i cannot see any FastAPI service on railway do you mean to the add the required configuration of fastapi services to backend env files?Show more13 AprTwo things to address:
+1. Railway n8n is empty — import your workflows now
+The {"data":[],"nextCursor":null} means Railway n8n has no workflows yet.
+Go to https://n8n-production-b3aa.up.railway.app in your browser → log in → Settings → Import from file → upload the workflow JSON you exported from local n8n. Do this now before anything else.
+
+2. FastAPI not on Railway yet — this is actually your next major step
+This explains a lot. Your backend is currently running locally in Docker (backend container on port 8000), not deployed to Railway yet. So BACKEND_PUBLIC_URL doesn't exist yet.
+Your actual current state:
+LOCAL (your machine)
+├── n8n          → Docker :5678
+├── backend      → Docker :8000  ← not on Railway yet
+└── postgres     → Docker :5432
+
+RAILWAY
+├── n8n          → deployed ✅
+└── Postgres     → deployed ✅ (connected to n8n)
+Target state:
+LOCAL
+└── (nothing running for production)
+
+RAILWAY  
+├── n8n          → already done ✅
+├── Postgres     → already done ✅ (for n8n)
+├── FastAPI      → needs deploying ← next step
+└── Postgres     → needs deploying ← for your app DB
+
+The correct order from here:
+Step 1 — Import workflows into Railway n8n (do this now, 5 mins)
+Step 2 — Deploy FastAPI to Railway
+Do you have a Dockerfile for your FastAPI backend already? Run this in PowerShell:
+powershellls C:\Users\danis\Office_automation\
+Look for a Dockerfile or railway.toml in your project root. Paste what you see and I'll give you the exact deployment steps. If there's no Dockerfile, I'll write one for you to give to Codex.
+Step 3 — Add a new Postgres on Railway for your app DB
+Your app needs its own Postgres separate from n8n's. Once FastAPI is deployed, we add a Postgres service and run your migrations against it.
+
+What does your project root folder contain? Paste the output of ls in your Office_automation directory.Directory: C:\Users\danis\Office_automation
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        11-04-2026     18:01                .emergent
+d-----        11-04-2026     18:33                .pytest_cache
+d-----        05-04-2026     22:56                .venv
+d-----        12-04-2026     11:04                all_workflows.json
+d-----        11-04-2026     18:29                auth
+d-----        11-04-2026     18:01                backend
+d-----        04-04-2026     21:31                db
+d-----        11-04-2026     18:33                fastapi
+d-----        11-04-2026     18:58                Finance
+d-----        12-04-2026     12:59                frontend
+d-----        04-04-2026     13:00                General_use
+d-----        11-04-2026     18:01                memory
+d-----        11-04-2026     18:30                models
+d-----        04-04-2026     12:52                OAuth
+d-----        12-04-2026     22:46                Router
+d-----        12-04-2026     10:47                routers
+d-----        12-04-2026     13:36                scripts
+d-----        12-04-2026     11:59                tests
+d-----        11-04-2026     18:01                test_reports
+d-----        12-04-2026     12:00                __pycache__
+-a----        11-04-2026     20:48            219 .env
+-a----        12-04-2026     11:57           1362 .env.example
+-a----        11-04-2026     18:01             61 .gitconfig
+-a----        11-04-2026     18:01            991 .gitignore
+-a----        11-04-2026     18:19          38298 CODEX_BUILD_PROMPT.md
+-a----        11-04-2026     18:29            622 database.py
+-a----        11-04-2026     18:01           8879 design_guidelines.json
+-a----        12-04-2026     23:13            569 docker-compose.yml
+-a----        12-04-2026     12:11          10383 final_v2_export.json
+-a----        12-04-2026     11:11           7378 hr_executor_import.json
+-a----        12-04-2026     12:03          10565 hr_executor_import_final.json
+-a----        12-04-2026     12:09          10656 hr_executor_import_final_v2.json      
+-a----        12-04-2026     11:17           7123 hr_executor_import_v3.json
+-a----        12-04-2026     11:22           7171 hr_executor_import_v4.json
+-a----        12-04-2026     11:04           4049 hr_executor_live.json
+-a----        12-04-2026     10:48           1422 main.py
+-a----        12-04-2026     11:24        4009984 n8n_database.sqlite
+-a----        12-04-2026     11:52           9700 orchestration.py
+-a----        12-04-2026     10:55             94 pytest.ini
+-a----        11-04-2026     18:01             29 README.md
+-a----        11-04-2026     19:27            440 requirements.txt
+-a----        11-04-2026     18:01           4774 test_result.md
+-a----        11-04-2026     21:01            408 uv_stderr.log
+-a----        12-04-2026     12:13          10809 uv_stderr_8000.log
+-a----        12-04-2026     11:27          38067 uv_stderr_8010.log
+-a----        11-04-2026     21:01              0 uv_stdout.log
+-a----        12-04-2026     12:13           1697 uv_stdout_8000.log
+-a----        12-04-2026     11:27           3767 uv_stdout_8010.logAlso let me know when will the backend and frontend(emergent) be modulated for this project as i have to handle several workflows for HR , Invoice etc to be added for this office_automation platform(Provide me prompts for backend configurations(codex) as well as frontend(emergent))Show more13 AprGood. You have a docker-compose.yml already and a requirements.txt. Let me read your current files before giving you anything to run.Read remaining frontend API and page filesRead remaining frontend API and page filesNow I have the full picture. Here is everything you need — the complete deployment plan plus both prompts.
+
+Your Current Reality
+LOCAL                          RAILWAY
+├── FastAPI  :8000  ←──────── NOT deployed yet
+├── Postgres :5432  ←──────── NOT deployed yet  
+└── n8n      :5678             ├── n8n ✅ Online
+                               └── Postgres ✅ (n8n's DB)
+You need to deploy FastAPI + a new Postgres to Railway. Do these steps first, then run the Codex and Emergent prompts at the bottom.
+
+Step 1 — Create a Dockerfile for FastAPI
+Create a file called Dockerfile in C:\Users\danis\Office_automation\ with this content:
+dockerfileFROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+Step 2 — Create railway.toml in the same folder
+toml[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port 8000"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+Step 3 — Push your project to GitHub
+Railway deploys from GitHub. In PowerShell:
+powershellcd C:\Users\danis\Office_automation
+
+# If not already a git repo
+git init
+git add .
+git commit -m "initial deploy"
+
+# Create a repo on github.com first, then:
+git remote add origin https://github.com/YOUR_USERNAME/office-automation.git
+git push -u origin main
+
+Step 4 — Deploy FastAPI on Railway
+Go to your current Railway project (the one that's empty, not the n8n one) → + Add → GitHub Repo → select your repo → Railway will detect the Dockerfile and deploy.
+Once deployed, Railway gives you a URL like https://office-automation-production.up.railway.app. Copy it.
+
+Step 5 — Add Postgres for your app on Railway
+In the same Railway project → + Add → Database → PostgreSQL. Railway creates it instantly and auto-injects DATABASE_URL into your project.
+
+Step 6 — Set all FastAPI environment variables on Railway
+Go to your FastAPI service → Variables → add all of these:
+DATABASE_URL            = (auto-injected by Railway Postgres — verify it exists)
+N8N_BASE_URL            = https://n8n-production-b3aa.up.railway.app
+N8N_API_KEY             = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0M2ZiODRkZS0yZDZjLTRhOTItOTQ5YS00ZWZlOGMyNTljMTEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiM2E4NDY2YWQtMzA3NC00NjE4LWJmMjktMzBlMDMyZWZiMDc3IiwiaWF0IjoxNzc2MDYxNzUwLCJleHAiOjE3Nzg2NDQ4MDB9.9Kov0xMqgC6B8SXVr02HRZmJc5mWZPYA__KUTa-lER0
+N8N_CALLBACK_SECRET     = office_auto_secret_2026
+N8N_BASIC_AUTH_USER     = Shah_Danish
+N8N_BASIC_AUTH_PASSWORD = 1092@Abab
+BACKEND_PUBLIC_URL      = https://your-fastapi-service.up.railway.app
+GROQ_API_KEY            = (your Groq key if you have one)
+
+Step 7 — Run migrations
+Once FastAPI is deployed and Postgres is connected, hit this endpoint once to apply all migrations:
+powershellInvoke-WebRequest `
+  -Uri "https://your-fastapi-service.up.railway.app/api/internal/run-migrations" `
+  -Method POST `
+  -Headers @{ "X-Internal-Secret" = "your_secret" } `
+  -UseBasicParsing
+Or run locally against the Railway Postgres URL:
+powershell# Set the DATABASE_URL to Railway's public URL, then:
+python scripts/run_all_migrations.py
+
+Step 8 — Import workflows into Railway n8n
+Go to https://n8n-production-b3aa.up.railway.app → log in → Settings → Import from file → upload all your workflow JSONs from the all_workflows.json folder and the Router/, Finance/ folders.
+
+Now here are your two implementation prompts:
+
+CODEX PROMPT — Full Backend Implementation
+You are implementing the complete backend for a production office automation platform.
+The codebase already exists. Your job is to fill in missing endpoints, fix broken
+integrations, and wire everything together.
+
+TECH STACK:
+- FastAPI (Python)
+- PostgreSQL via asyncpg / SQLAlchemy
+- n8n as workflow execution engine (REST API integration)
+- Groq API with llama-3.1-8b-instant for intent classification
+- httpx for async HTTP calls
+
+ENVIRONMENT VARIABLES (already set on Railway, read via os.getenv):
+- DATABASE_URL
+- N8N_BASE_URL
+- N8N_API_KEY
+- N8N_CALLBACK_SECRET
+- N8N_BASIC_AUTH_USER
+- N8N_BASIC_AUTH_PASSWORD
+- BACKEND_PUBLIC_URL
+- GROQ_API_KEY
+
+=============================================================
+TASK 1 — Rewrite orchestration.py completely
+=============================================================
+
+Replace the entire file with this implementation:
+
+import httpx
+import os
+import base64
+import json
+from datetime import datetime, timezone
+from uuid import uuid4
+
+N8N_BASE_URL = os.getenv("N8N_BASE_URL", "")
+N8N_API_KEY = os.getenv("N8N_API_KEY", "")
+N8N_BASIC_AUTH_USER = os.getenv("N8N_BASIC_AUTH_USER", "")
+N8N_BASIC_AUTH_PASSWORD = os.getenv("N8N_BASIC_AUTH_PASSWORD", "")
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "")
+N8N_CALLBACK_SECRET = os.getenv("N8N_CALLBACK_SECRET", "")
+
+def _n8n_headers() -> dict:
+    """Build headers required for every n8n API call."""
+    basic = base64.b64encode(
+        f"{N8N_BASIC_AUTH_USER}:{N8N_BASIC_AUTH_PASSWORD}".encode()
+    ).decode()
+    return {
+        "X-N8N-API-KEY": N8N_API_KEY,
+        "Authorization": f"Basic {basic}",
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+    }
+
+async def trigger_n8n_workflow(workflow_id: str, payload: dict, execution_id: str) -> dict:
+    """Trigger an n8n workflow and pass a callback URL for async result reporting."""
+    callback_url = f"{BACKEND_PUBLIC_URL}/api/webhooks/n8n/callback/{execution_id}"
+    body = {
+        "workflowData": {
+            **payload,
+            "_callback_url": callback_url,
+            "_execution_id": execution_id,
+            "_secret": N8N_CALLBACK_SECRET,
+        }
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{N8N_BASE_URL}/api/v1/workflows/{workflow_id}/run",
+            json=body,
+            headers=_n8n_headers(),
+        )
+        resp.raise_for_status()
+    return resp.json()
+
+async def get_n8n_workflows() -> list:
+    """Fetch all workflows from n8n for the sync endpoint."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{N8N_BASE_URL}/api/v1/workflows",
+            headers=_n8n_headers(),
+        )
+        resp.raise_for_status()
+    return resp.json().get("data", [])
+
+async def update_execution_status(
+    db,
+    execution_id: str,
+    status: str,
+    result: dict = None,
+    error: str = None,
+):
+    """Update an execution_logs row. status: pending|running|completed|failed|timeout"""
+    now = datetime.now(timezone.utc)
+    params = {"id": execution_id, "status": status, "updated_at": now}
+    set_clauses = ["status = :status", "updated_at = :updated_at"]
+
+    if result is not None:
+        params["result_payload"] = json.dumps(result)
+        set_clauses.append("result_payload = :result_payload")
+    if error is not None:
+        params["error_message"] = error
+        set_clauses.append("error_message = :error_message")
+    if status in ("completed", "failed", "timeout"):
+        params["completed_at"] = now
+        set_clauses.append("completed_at = :completed_at")
+
+    sql = f"UPDATE execution_logs SET {', '.join(set_clauses)} WHERE id = :id"
+    await db.execute(sql, params)
+    await db.commit()
+
+async def log_execution(db, user_email: str, workflow_id: str, input_payload: dict) -> str:
+    """Create a new execution_logs row and return the execution_id."""
+    execution_id = str(uuid4())
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        """INSERT INTO execution_logs 
+           (id, user_email, workflow_id, status, input_payload, started_at, updated_at)
+           VALUES (:id, :user_email, :workflow_id, 'pending', :input_payload, :started_at, :updated_at)""",
+        {
+            "id": execution_id,
+            "user_email": user_email,
+            "workflow_id": workflow_id,
+            "input_payload": json.dumps(input_payload),
+            "started_at": now,
+            "updated_at": now,
+        }
+    )
+    await db.commit()
+    return execution_id
+
+=============================================================
+TASK 2 — Add new migration file
+=============================================================
+
+Create db/migrations/010_create_workflows_table.sql:
+
+CREATE TABLE IF NOT EXISTS workflows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    n8n_workflow_id VARCHAR(255) NOT NULL UNIQUE,
+    domain VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    default_params JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_workflows_domain ON workflows(domain);
+CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
+
+ALTER TABLE execution_logs 
+    ADD COLUMN IF NOT EXISTS workflow_id UUID REFERENCES workflows(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS result_payload JSONB,
+    ADD COLUMN IF NOT EXISTS error_message TEXT,
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
+
+=============================================================
+TASK 3 — Create routers/chat.py (NEW FILE)
+=============================================================
+
+Implement these endpoints:
+
+POST /api/chat/message
+- Request: { "text": str, "active_connectors": list[str], "user_email": str }
+- Uses Groq llama-3.1-8b-instant to classify intent:
+  System prompt: "You are an intent classifier for an office automation system.
+  Given a user request, respond ONLY with valid JSON (no markdown, no explanation):
+  {
+    'domain': one of [invoice, meeting, hr, approval, general],
+    'action': short snake_case description e.g. process_invoice,
+    'parameters': dict of values extracted from the user text
+  }"
+- Looks up active workflow from workflows table matching domain
+- Creates execution_logs record (status=pending) via log_execution()
+- Calls trigger_n8n_workflow()
+- Updates status to running
+- Returns: { "execution_id": str, "domain": str, "action": str, 
+             "message": "Workflow started", "workflow_name": str }
+- If no workflow found for domain: return { "execution_id": null, 
+  "message": "No workflow configured for this request type. 
+  Please contact your administrator." }
+- If Groq call fails: return domain=general with a helpful message
+
+GET /api/executions/{execution_id}
+- Returns the execution_logs row as JSON
+- Returns 404 if not found
+- Validates X-User-Email header matches the execution's user_email (return 403 if mismatch)
+- Response shape: { id, status, domain, workflow_name, started_at, 
+                    completed_at, result_payload, error_message }
+
+GET /api/executions
+- Query params: status (optional), limit (default 20, max 100)
+- Reads user_email from X-User-Email header
+- Returns list of executions for that user ordered by started_at DESC
+
+=============================================================
+TASK 4 — Add to routers/internal.py
+=============================================================
+
+POST /api/webhooks/n8n/callback/{execution_id}
+- Validates header X-N8N-Callback-Secret matches N8N_CALLBACK_SECRET env var
+- Returns 403 if mismatch
+- Body: { "status": "success"|"error", "data": dict, "error": str (optional) }
+- Maps: success → completed, error → failed
+- Calls update_execution_status() with result or error
+- Returns: { "received": true }
+
+POST /api/admin/sync-workflows
+- Requires header X-Admin-Key matching env var ADMIN_SECRET_KEY
+- Calls get_n8n_workflows() from orchestration.py
+- Domain mapping dict (edit this to match your actual workflow names):
+  DOMAIN_MAP = {
+    "invoice": "invoice",
+    "meeting": "meeting", 
+    "hr": "hr",
+    "approval": "approval",
+    "recrui": "hr",
+    "summar": "meeting",
+    "finance": "invoice",
+  }
+- For each workflow from n8n, determine domain by checking if any 
+  DOMAIN_MAP key appears (lowercase) in the workflow name
+- Upsert into workflows table using n8n_workflow_id as conflict key
+- Returns: { "synced": int, "workflows": list of names }
+
+=============================================================
+TASK 5 — Fix routers/invoices.py
+=============================================================
+
+The existing POST /api/webhooks/invoice endpoint should:
+1. Accept { user_email, file_base64, filename }
+2. Create an execution_logs record via log_execution()
+3. Look up the invoice workflow from workflows table
+4. Call trigger_n8n_workflow() with the file data
+5. Return { success: true, execution_id: str, status: "processing" }
+Remove the mock response fallback entirely.
+
+The existing GET /api/invoices/{user_email} should:
+1. Query execution_logs WHERE user_email = :email AND domain = 'invoice'
+2. Return real data from the database
+3. Remove mock data fallback entirely
+
+Apply the same pattern to routers/meetings.py for meeting uploads.
+
+=============================================================
+TASK 6 — Fix routers/dashboard.py
+=============================================================
+
+GET /api/status/{user_email} should query real data:
+- invoices_processed: COUNT from execution_logs WHERE domain='invoice' 
+  AND status='completed' AND user_email=email
+- meetings_summarized: COUNT from execution_logs WHERE domain='meeting' 
+  AND status='completed' AND user_email=email  
+- pending_approvals: COUNT from execution_logs WHERE domain='approval' 
+  AND status='pending' AND user_email=email
+- system_status: 'active' if n8n reachable (try GET /api/v1/workflows 
+  with 2s timeout, else 'degraded')
+- recent_activity: Last 10 execution_logs rows for this user, 
+  ordered by started_at DESC
+Remove ALL mock data fallbacks.
+
+=============================================================
+TASK 7 — Register new router in main.py
+=============================================================
+
+Add to main.py:
+from routers.chat import router as chat_router
+app.include_router(chat_router, prefix="/api")
+
+Verify all existing routers are still registered.
+
+=============================================================
+TASK 8 — Write tests in tests/test_chat_flow.py
+=============================================================
+
+Test these 5 scenarios using pytest + httpx AsyncClient:
+1. POST /api/chat/message with "process invoice from Acme Corp" 
+   → response has domain="invoice"
+2. POST /api/webhooks/n8n/callback/{id} with wrong secret 
+   → 403 response
+3. POST /api/webhooks/n8n/callback/{id} with correct secret and status="success" 
+   → execution status becomes "completed"
+4. GET /api/executions/nonexistent-id 
+   → 404 response
+5. GET /api/executions/{id} with wrong user email header 
+   → 403 response
+
+Mock the n8n HTTP calls using httpx MockTransport so tests don't need 
+a live n8n instance.
+
+EMERGENT PROMPT — Full Frontend Extension
+You are extending an existing production React frontend for an office automation 
+platform called Spatial+. The codebase uses React + CRACO + Tailwind + Shadcn UI.
+
+EXISTING DESIGN SYSTEM (do not change any of these):
+- Sidebar: bg-[#0F172A], active item: bg-slate-800 border-l-2 border-orange-500
+- Primary: #F97316 (orange-500), hover: #EA580C
+- Cards: bg-white border border-slate-200 rounded-lg shadow-sm
+- Fonts: Outfit (headings, class font-outfit), Plus Jakarta Sans (body, class font-jakarta)
+- Status colors: pending=amber, running=blue with spinner, completed=emerald, failed=red
+- All interactive elements MUST have data-testid attributes
+
+EXISTING PAGES (do not rebuild, only extend where noted):
+- LandingPage, DashboardPage, InvoiceManagerPage, MeetingSummarizerPage, 
+  ApprovalCenterPage, HRConnectPage, SettingsPage
+- Sidebar, TopBar, UploadZone, StatusStepper, ApprovalCard, EmptyStates, Skeletons
+
+CRITICAL FIXES NEEDED ON EXISTING FILES:
+
+Fix 1 — src/api/dashboard.js
+Remove the catch block mock data return. Let errors throw naturally.
+Add try/catch that calls toast.error() then re-throws.
+
+Fix 2 — src/api/invoices.js  
+Remove mock data returns from both getInvoices and uploadInvoice.
+Let real errors surface. Same pattern for meetings.js, hr.js, approvals.js.
+
+Fix 3 — src/components/Sidebar.jsx
+The logo image URL is broken (ends in .pngb). Replace the img tag with 
+this permanent SVG fallback shown directly (no img tag, no onError):
+<div className="flex items-center gap-2">
+  <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+    <Settings className="w-5 h-5 text-white" />
+  </div>
+  <span className="text-lg font-outfit font-semibold text-white">
+    spatial<sup className="text-orange-500">+</sup>
+  </span>
+</div>
+
+Fix 4 — src/pages/LandingPage.jsx
+Change handleConnectGoogle to actually redirect to OAuth instead of hardcoded login:
+const handleConnectGoogle = () => {
+  const BASE_URL = process.env.REACT_APP_BACKEND_URL || '';
+  window.location.href = `${BASE_URL}/api/auth/google`;
+};
+Remove the hardcoded demoEmail line entirely.
+
+NEW FEATURE 1 — ChatPage (src/pages/ChatPage.jsx)
+
+Create a new page at route /chat with this layout:
+
+LEFT PANEL (w-72, fixed height, flex-col, bg-white border-r border-slate-200):
+- Header: "Connectors" in font-outfit font-semibold text-slate-900, p-4
+- List of connector cards, each showing:
+  - Colored icon (use lucide-react icons)
+  - Connector name
+  - "Active"/"Inactive" badge
+  - Shadcn Switch component to toggle
+- Connectors: Gmail (Mail icon, blue), Google Drive (HardDrive, green), 
+  Google Calendar (Calendar, orange), Google Sheets (Table, emerald), 
+  HR System (Users, purple)
+- When toggled on: card gets border border-emerald-200 bg-emerald-50
+- When toggled off: border border-slate-200 bg-white
+- data-testid="connector-{name}-toggle" on each switch
+
+RIGHT PANEL (flex-1, flex-col):
+
+TOP: MessageThread (flex-1, overflow-y-auto, p-4, space-y-4)
+Each message is an object: { id, role: 'user'|'assistant', text, 
+  timestamp, executionId?, status? }
+
+User messages: 
+  flex justify-end → bubble: bg-orange-500 text-white rounded-2xl 
+  rounded-br-sm px-4 py-3 max-w-lg text-sm
+
+Assistant messages:
+  flex justify-start → bubble: bg-white border border-slate-200 
+  rounded-2xl rounded-bl-sm px-4 py-3 max-w-lg text-sm text-slate-700
+  If message has executionId, render WorkflowStatusCard below the text
+
+WorkflowStatusCard (inside assistant bubble):
+  mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200
+  Row 1: workflow name (font-medium text-slate-900 text-xs) + status badge
+  Row 2: Shadcn Progress bar (value based on status: pending=10, running=50, completed=100, failed=100)
+  Row 3: timestamp text-xs text-slate-400
+  Status badges: pending=amber, running=blue (with Loader2 animate-spin icon w-3 h-3), 
+    completed=emerald (CheckCircle icon), failed=red (XCircle icon)
+  data-testid="workflow-status-card"
+
+BOTTOM: MessageInput (border-t border-slate-200 p-4)
+  Active connectors pills row above input:
+    flex gap-2 mb-3 flex-wrap
+    Each active connector: span with bg-slate-100 text-slate-700 
+    text-xs px-2 py-1 rounded-full
+  Input row: flex gap-3 items-end
+    Textarea (auto-resize via onInput, max height 120px, 
+      Shadcn Textarea, placeholder="Ask me to automate anything...")
+    Send button: bg-orange-500 hover:bg-orange-600 text-white 
+      rounded-lg px-4 py-2 (Send icon from lucide)
+    data-testid="chat-input" on textarea
+    data-testid="chat-send-btn" on button
+
+STATE MANAGEMENT — create src/hooks/useChat.js:
+- messages: array of message objects
+- connectorStates: { gmail: false, drive: false, calendar: false, 
+    sheets: false, hr: false }
+- isLoading: bool
+- sendMessage(text):
+  1. Add user message to messages array
+  2. Set isLoading true
+  3. Call POST /api/chat/message with text and active connectors
+  4. Add assistant message with executionId from response
+  5. Start polling GET /api/executions/{executionId} every 3 seconds
+  6. On each poll, update the message's status field
+  7. Stop polling when status is completed or failed
+  8. Set isLoading false
+
+API — create src/api/chat.js:
+export const chatApi = {
+  sendMessage: async (text, activeConnectors, userEmail) => {
+    const response = await apiClient.post('/chat/message', {
+      text,
+      active_connectors: activeConnectors,
+      user_email: userEmail,
+    });
+    return response.data;
+    // NO catch/mock — let errors surface
+  },
+  getExecution: async (executionId) => {
+    const response = await apiClient.get(`/executions/${executionId}`);
+    return response.data;
+  },
+  getActiveExecutions: async () => {
+    const response = await apiClient.get('/executions?status=running&limit=5');
+    return response.data;
+  },
+};
+
+Add ChatPage to App.js inside ProtectedRoute + DashboardLayout:
+<Route path="/chat" element={<ChatPage />} />
+
+Add to Sidebar.jsx navigation array (after Dashboard, before Invoice Manager):
+{ name: 'Automation Chat', href: '/chat', icon: MessageSquare }
+Import MessageSquare from lucide-react.
+
+NEW FEATURE 2 — Active Workflows in Sidebar
+
+In Sidebar.jsx, below the navigation list, add an "Active workflows" section:
+- Use Shadcn Collapsible (import from @/components/ui/collapsible)
+- Header row: "Active workflows" text-xs font-medium text-slate-400 uppercase 
+  tracking-wider + count badge (amber if count > 0)
+- Polls GET /api/executions?status=running every 10 seconds via useEffect
+- Each item (max 5 shown):
+  div className="px-3 py-2 text-xs"
+    Row 1: workflow name truncated (text-slate-300) + pulsing blue dot
+      (w-2 h-2 bg-blue-400 rounded-full animate-pulse)
+    Row 2: time ago (text-slate-500)
+- If 0 active: show "No active workflows" text-slate-500 text-xs px-3 py-2
+- data-testid="active-workflows-section"
+
+NEW FEATURE 3 — Settings Page: Connected Accounts tab
+
+In src/pages/SettingsPage.jsx, add a "Connected Accounts" section 
+(use Shadcn Tabs if the page doesn't already have them):
+
+Tab: "Connected Accounts"
+For each connector (Gmail, Google Drive, Google Calendar, Google Sheets):
+  Card row containing:
+  - Left: colored icon + connector name (font-medium text-slate-900) 
+    + description text-sm text-slate-500
+  - Right: status badge + action button
+  
+  If connected: emerald badge "Connected" + outline Button "Disconnect"
+  If not connected: slate badge "Not connected" + orange Button "Connect"
+  
+  Connect button for Google services:
+  onClick={() => window.location.href = `${BASE_URL}/api/auth/google`}
+  
+  data-testid="connect-{connector-name}-btn" on each button
+  
+Fetch connector status from GET /api/connectors (returns list of 
+  {connector_type, is_active, display_name}).
+  If endpoint returns 404, show all as "Not connected" gracefully.
+
+NEW FEATURE 4 — DashboardPage: wire StatusStepper to real execution
+
+In DashboardPage.jsx, below the stats grid, add an "Active Executions" card:
+- Calls GET /api/executions?status=running&limit=3
+- If results exist: shows each as a row with StatusStepper component
+  Steps: ['Received', 'Processing', 'AI Analysis', 'Complete']
+  Map execution status to step index: pending=0, running=2, completed=3, failed=3
+- If no results: show a subtle empty state "No active executions"
+- Polls every 5 seconds
+- data-testid="active-executions-card"
+
+ENVIRONMENT:
+- REACT_APP_BACKEND_URL is the FastAPI Railway URL
+- All API calls already go through src/api/axios.js which adds X-User-Email header
+
+Do not change the design system, color palette, font choices, or 
+Shadcn component usage. Extend only — do not rewrite existing pages 
+from scratch.
+
+Your Action Order Right Now
+
+Import workflows into Railway n8n (5 mins) — https://n8n-production-b3aa.up.railway.app
+Create Dockerfile + railway.toml in your project root (copy from above)
+Push to GitHub and deploy to Railway
+Add Postgres on Railway for your app
+Set all environment variables on the FastAPI service
+Run migrations against the new Postgres
+Give Codex prompt → implement backend
+Give Emergent prompt → implement frontend
+
+Tell me when FastAPI is deployed on Railway — I'll help you verify the connection to n8n and run the smoke test.I am seeing this issue:
+(.venv) PS C:\Users\danis\Office_automation> Invoke-WebRequest 
+>>   -Uri "https://backend-production-8d62.up.railway.app/api/internal/run-migrations"  
+>>   -Method POST 
+>>   -Headers @{ "X-Internal-Secret" = "office_secret_2026" } 
+>>   -UseBasicParsing
+Invoke-WebRequest : {"detail":"Not Found"}
+At line:1 char:1
++ Invoke-WebRequest `
++ ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebR 
+   equest:HttpWebRequest) [Invoke-WebRequest], WebException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsof 
+   t.PowerShell.Commands.InvokeWebRequestCommand
+(.venv) PS C:\Users\danis\Office_automation> Also i wanted to let you know that i just have the workflows that i want to integerate but according to the project to work i do have to change its parameters,right?
+So when will we do that and how should i update the backend to handle all of these workflows according to my requirements(This will have to be handled by codex)Show more7:10 pmThe 404 means the /api/internal/run-migrations endpoint doesn't exist in your current backend code. That's fine — we'll run migrations a different way. But first let me check what your backend actually has.
+Run this to see what endpoints exist:
+powershellInvoke-WebRequest `
+  -Uri "https://backend-production-8d62.up.railway.app/docs" `
+  -UseBasicParsing
+Or just open https://backend-production-8d62.up.railway.app/docs in your browser — FastAPI auto-generates a docs page showing all available routes.
+
+Run migrations directly instead
+Since the endpoint doesn't exist, run migrations locally pointing at your Railway Postgres. First check your .env file:
+powershellcat C:\Users\danis\Office_automation\.env
+Paste what's in there (redact passwords). I need to see if DATABASE_URL is pointing to Railway or local Postgres. Then run:
+powershellcd C:\Users\danis\Office_automation
+python scripts/run_all_migrations.py
+
+On your workflow question — yes, this is critical
+You're right. Your n8n workflows need parameter changes AND your backend needs to know how to call each one correctly. This is the most important thing to get right for your demo.
+I need to know exactly what workflows you have. Run this to see all of them:
+powershellInvoke-WebRequest `
+  -Uri "https://n8n-production-b3aa.up.railway.app/api/v1/workflows" `
+  -Headers @{
+    "X-N8N-API-KEY" = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0M2ZiODRkZS0yZDZjLTRhOTItOTQ5YS00ZWZlOGMyNTljMTEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiM2E4NDY2YWQtMzA3NC00NjE4LWJmMjktMzBlMDMyZWZiMDc3IiwiaWF0IjoxNzc2MDYxNzUwLCJleHAiOjE3Nzg2NDQ4MDB9.9Kov0xMqgC6B8SXVr02HRZmJc5mWZPYA__KUTa-lER0";
+    "Authorization" = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("Shah_Danish:1092@Abab"))
+  } `
+  -UseBasicParsing | Select-Object -ExpandProperty Content
+Paste the full output. Once I see your workflow names and IDs, I'll give you:
+
+Exactly which parameters each workflow needs changed in n8n
+A precise Codex prompt that maps each workflow to the correct backend handler with the right payload shape
+The domain mapping so the intent router knows which workflow to trigger for HR vs invoice vs meeting requests
+
+This is the step that makes everything actually work end-to-end — so let's get the full workflow list first before writing any more backend code.
