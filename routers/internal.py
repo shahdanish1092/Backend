@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 
 from database import get_db_connection
 from orchestration import (
@@ -15,6 +15,7 @@ from orchestration import (
     post_with_retry,
     upsert_execution_log,
     update_execution_log,
+    update_execution_status,
 )
 
 
@@ -340,3 +341,34 @@ async def n8n_ping():
     except Exception as exc:
         log_exception("Failed to ping n8n health endpoint")
         raise HTTPException(status_code=502, detail=f"Failed to ping n8n: {exc}") from exc
+
+
+@router.post("/webhooks/n8n/callback/{execution_id}")
+async def n8n_callback(execution_id: str, payload: dict, x_n8n_callback_secret: str | None = Header(None)):
+    """Generic receiver for n8n workflow callbacks.
+
+    Expects body like: {"status": "success"|"error", "data": {...}, "error": "message"}
+    Validates X-N8N-Callback-Secret header against N8N_CALLBACK_SECRET and maps status.
+    """
+    secret = os.getenv("N8N_CALLBACK_SECRET")
+    if not secret or x_n8n_callback_secret != secret:
+        raise HTTPException(status_code=403, detail="Invalid callback secret")
+
+    status_in = (payload.get("status") or "").strip().lower()
+    if status_in in {"success", "completed", "ok"}:
+        mapped = "completed"
+    elif status_in in {"error", "failed"}:
+        mapped = "failed"
+    else:
+        mapped = status_in or "completed"
+
+    conn = get_db_connection()
+    try:
+        update_execution_status(conn, execution_id, mapped, result=payload.get("data"), error=payload.get("error"))
+    except Exception as exc:
+        log_exception("Failed to persist n8n callback", execution_id=execution_id, payload=payload)
+        raise HTTPException(status_code=500, detail=f"Failed to persist callback: {exc}") from exc
+    finally:
+        conn.close()
+
+    return {"received": True}

@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 import httpx
+import base64
 
 
 logger = logging.getLogger("office_automation.orchestration")
@@ -199,17 +200,28 @@ def merge_execution_log_output_summary(conn, request_id: str, patch: Any, *, sta
 
 def build_n8n_api_headers() -> dict[str, str]:
     api_key = os.getenv("N8N_API_KEY")
-    if not api_key:
-        return {}
+    headers: dict[str, str] = {}
 
     custom_header = os.getenv("N8N_API_AUTH_HEADER")
-    if custom_header:
-        return {custom_header: api_key}
+    if api_key:
+        if custom_header:
+            headers[custom_header] = api_key
+        else:
+            auth_mode = os.getenv("N8N_API_AUTH_MODE", "x-api-key").strip().lower()
+            if auth_mode in {"bearer", "authorization"}:
+                headers["Authorization"] = f"Bearer {api_key}"
+            else:
+                headers["X-N8N-API-KEY"] = api_key
 
-    auth_mode = os.getenv("N8N_API_AUTH_MODE", "x-api-key").strip().lower()
-    if auth_mode in {"bearer", "authorization"}:
-        return {"Authorization": f"Bearer {api_key}"}
-    return {"X-N8N-API-KEY": api_key}
+    # If n8n basic auth credentials are provided, include Basic auth as Authorization header
+    basic_user = os.getenv("N8N_BASIC_AUTH_USER")
+    basic_pass = os.getenv("N8N_BASIC_AUTH_PASSWORD")
+    if basic_user and basic_pass:
+        creds = f"{basic_user}:{basic_pass}".encode("utf-8")
+        b64 = base64.b64encode(creds).decode("ascii")
+        headers["Authorization"] = f"Basic {b64}"
+
+    return headers
 
 
 async def post_with_retry(
@@ -303,3 +315,57 @@ async def ping_n8n_health() -> dict[str, Any]:
         except ValueError:
             body = response.text
     return {"base_url": n8n_base_url.rstrip("/"), "status_code": response.status_code, "body": body}
+
+
+async def trigger_n8n_workflow(workflow_id: str, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
+    """Trigger a workflow run via the n8n REST API.
+
+    Posts to: {N8N_BASE_URL}/api/v1/workflows/{workflow_id}/run
+    Includes a callback URL that n8n should POST results to.
+    Returns the parsed JSON response or a dict with status/text on non-JSON.
+    """
+    n8n_base_url = os.getenv("N8N_BASE_URL")
+    if not n8n_base_url:
+        raise RuntimeError("N8N_BASE_URL is not configured")
+
+    backend_public = os.getenv("BACKEND_PUBLIC_URL") or os.getenv("FASTAPI_BASE_URL") or os.getenv("FASTAPI_CALLBACK_URL")
+    callback_url = None
+    if backend_public:
+        callback_url = f"{backend_public.rstrip('/')}/api/webhooks/n8n/callback/{execution_id}"
+
+    url = f"{n8n_base_url.rstrip('/')}/api/v1/workflows/{workflow_id}/run"
+    body: dict[str, Any] = {
+        "execution_id": execution_id,
+        "input": payload or {},
+    }
+    if callback_url:
+        body["callback_url"] = callback_url
+
+    headers = build_n8n_api_headers()
+    # ngrok sometimes injects an interstitial for non-browser requests; harmless to include
+    headers.setdefault("ngrok-skip-browser-warning", "true")
+
+    resp = await post_with_retry(url, json_body=body, headers=headers, timeout=20.0, attempts=3)
+    try:
+        return resp.json()
+    except Exception:
+        return {"status_code": resp.status_code, "text": resp.text}
+
+
+def update_execution_status(conn, execution_id: str, status: str, result: dict | None = None, error: str | None = None) -> int:
+    """Helper to persist an execution status update into execution_logs.
+
+    Uses merge_execution_log_output_summary to merge the result payload and set status.
+    Returns number of rows updated.
+    """
+    patch: dict[str, Any] = {}
+    if result is not None:
+        patch["result"] = result
+    if error is not None:
+        patch["error"] = str(error)
+
+    try:
+        return merge_execution_log_output_summary(conn, execution_id, patch, status=status)
+    except Exception as exc:
+        log_exception("Failed to update execution status", request_id=execution_id, error=exc)
+        raise

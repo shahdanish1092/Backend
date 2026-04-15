@@ -6,7 +6,7 @@ import os
 
 load_dotenv()
 
-from routers import auth, dashboard, invoices, hr, meetings, approvals, admin, internal, hr_execute
+from routers import auth, dashboard, invoices, hr, meetings, approvals, admin, internal, hr_execute, chat, connectors
 
 
 logging.basicConfig(
@@ -36,6 +36,8 @@ app.include_router(meetings.router, prefix="/api", tags=["meetings"])
 app.include_router(approvals.router, prefix="/api", tags=["approvals"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(internal.router, prefix="/api", tags=["internal"])
+app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(connectors.router, prefix="/api/connectors", tags=["connectors"])
 
 
 @app.get("/health")

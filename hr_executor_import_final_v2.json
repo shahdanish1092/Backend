@@ -185,6 +185,15 @@
         "parameters": {
           "url": "={{ $item(0).$node['Extract Context'].json.callback_url }}",
           "method": "POST",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-N8N-Callback-Secret",
+                "value": "={{ $env.N8N_CALLBACK_SECRET }}"
+              }
+            ]
+          },
           "options": {},
           "sendBody": true,
           "specifyBody": "json",

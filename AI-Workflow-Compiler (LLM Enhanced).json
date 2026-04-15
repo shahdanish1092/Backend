@@ -1,0 +1,1186 @@
+{
+  "name": "AI-Workflow-Compiler (LLM Enhanced)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hr-workflow",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a24abf6f-a9e1-4158-b946-fba7cf9bf1e3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1728,
+        320
+      ],
+      "webhookId": "7976e4e3-d95f-4c19-b634-620085211600"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst userStatement = body.message || body.user_statement || body.query || '';\nconst source = body.source || 'direct';\nreturn [{ json: { ...body, user_statement: userStatement, source, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "10a3b337-d5b7-4c3b-a17c-cf8c836289f6",
+      "name": "Extract context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "89d70c34-360f-4d1a-b9e2-636985848dda",
+      "name": "Split Out",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -1280,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst flat = {};\nfunction flatten(obj, prefix) {\n  for (const [k, v] of Object.entries(obj || {})) {\n    const key = prefix ? prefix + '_' + k : k;\n    if (v && typeof v === 'object' && !Array.isArray(v)) flatten(v, key);\n    else flat[key] = v;\n  }\n}\nflatten(item, '');\nreturn [{ json: { ...item, ...flat } }];"
+      },
+      "id": "4f8b94b0-2a25-47a7-bac0-5deff4d6fe2e",
+      "name": "Flatten Step",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "cond_has_statement",
+              "leftValue": "={{ $json.user_statement }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b6f987d1-2145-447f-9b28-34f092d29c10",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/analyze",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"user_statement\": \"{{ $json.user_statement }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "85b03935-21ca-4517-9c9b-6d20ce686db0",
+      "name": "LLM Intent Classifier",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -608,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handles both success output (port 0) and error output (port 1)\n// from the LLM Intent Classifier node\nconst intentResult = $input.first().json;\n\n// Determine workflow_type — use LLM result or fall back to hr_recruitment\nconst workflowType = intentResult.workflow_type || 'hr_recruitment';\nconst intentId = intentResult.intent_id || null;\n\n// Get original payload from Flatten Step\nlet originalPayload = {};\ntry { originalPayload = $('Flatten Step').first().json; } catch(e) {}\n\nreturn [{\n  json: {\n    ...originalPayload,\n    workflow_type: workflowType,\n    intent_id: intentId,\n    clarification_questions: intentResult.clarification_questions || [],\n    llm_intent_used: !intentResult.error,\n    llm_fallback: !!intentResult.error\n  }\n}];"
+      },
+      "id": "4ce7b689-3b49-4fe3-b984-29dcdafeabc6",
+      "name": "Merge Intent Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "id": "rule_hr",
+                    "leftValue": "={{ $json.workflow_type }}",
+                    "rightValue": "hr_recruitment",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HR Recruitment"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "id": "rule_email",
+                    "leftValue": "={{ $json.workflow_type }}",
+                    "rightValue": "email_automation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Email Automation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "id": "rule_calendar",
+                    "leftValue": "={{ $json.workflow_type }}",
+                    "rightValue": "calendar_automation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Calendar Automation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "id": "rule_generic",
+                    "leftValue": "={{ $json.workflow_type }}",
+                    "rightValue": "generic_automation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Generic"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "e60086c5-72f7-464f-b6c7-33c68da2a383",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -240,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "id": "route_gmail",
+                    "leftValue": "={{ $json.source }}",
+                    "rightValue": "gmail",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Gmail"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false
+                },
+                "conditions": [
+                  {
+                    "id": "route_api",
+                    "leftValue": "={{ $json.source }}",
+                    "rightValue": "api",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "API"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "279bdfa2-7eb6-45c6-9519-76d69462bda6",
+      "name": "Route by Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        80,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 10,
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ],
+          "q": "has:attachment resume OR cv"
+        }
+      },
+      "id": "2eb2c5db-7dcf-4f2b-99bf-284e80e1a15d",
+      "name": "Get many messages",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        288,
+        80
+      ],
+      "webhookId": "f61a8fb3-c9da-407c-9fae-5f88d2739aff",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "S2rllMbRPFX70D5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.map(item => ({\n  json: {\n    source: 'gmail',\n    message_id: item.json.id,\n    subject: item.json.payload?.headers?.find(h => h.name === 'Subject')?.value || '',\n    from: item.json.payload?.headers?.find(h => h.name === 'From')?.value || '',\n    body: item.json.snippet || '',\n    has_attachments: (item.json.payload?.parts || []).some(p => p.filename),\n    workflow_type: $('Merge Intent Context').first().json.workflow_type || 'hr_recruitment',\n    intent_id: $('Merge Intent Context').first().json.intent_id || null,\n    raw: item.json\n  }\n}));"
+      },
+      "id": "c2dad4c7-9d0c-4ec2-adb0-d414935995f2",
+      "name": "Normalize Email Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/document/extract",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content_base64\": \"{{ $json.attachment_base64 || '' }}\",\n  \"filename\": \"{{ $json.filename || 'document.pdf' }}\",\n  \"mime_type\": \"{{ $json.mime_type || 'application/pdf' }}\",\n  \"use_ocr_fallback\": true,\n  \"request_id\": \"{{ $json.intent_id || '' }}\",\n  \"workflow_type\": \"{{ $json.workflow_type || 'hr_recruitment' }}\",\n  \"step_id\": \"extract_text\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "93559c24-f698-4d53-9e63-925e687082a3",
+      "name": "Extract Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        512,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{\n  json: {\n    extracted_text: item.extracted_text || item.body || '',\n    source: item.source || 'api',\n    filename: item.filename || '',\n    parser: item.parser || 'direct',\n    workflow_type: item.workflow_type || $('Merge Intent Context').first().json.workflow_type || 'hr_recruitment',\n    intent_id: item.intent_id || $('Merge Intent Context').first().json.intent_id || null\n  }\n}];"
+      },
+      "id": "ad857dd3-e97d-4272-853b-66b69e021e3e",
+      "name": "extract source merge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{\n  json: {\n    request_id: item.intent_id || item.request_id || '',\n    workflow_type: item.workflow_type || 'hr_recruitment',\n    step_id: 'rank_candidates',\n    extracted_text: item.extracted_text || '',\n    criteria: item.criteria || 'Python, FastAPI, 3+ years experience, strong communication skills',\n    ranking_logic: item.ranking_logic || 'weighted_scoring'\n  }\n}];"
+      },
+      "id": "b7d7d5c9-7874-4486-8ab1-0306d99e1691",
+      "name": "Build Rank Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/rank/candidates",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "2508c885-cd4b-4b69-af98-bdeaf8908266",
+      "name": "Rank Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1184,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"max_tokens\": 800,\n  \"temperature\": 0.1,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a candidate re-ranker for HR recruitment. Given a list of ranked candidates and job criteria, re-rank them by best fit. Return ONLY valid JSON in this exact format: { \\\"reranked\\\": [ { \\\"candidate_name\\\": \\\"string\\\", \\\"candidate_email\\\": \\\"string or null\\\", \\\"adjusted_score\\\": 0, \\\"fit_reason\\\": \\\"string\\\" } ] }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Candidates: {{ JSON.stringify($json.ranked_candidates || []) }}\\n\\nJob criteria: {{ $('Build Rank Input').first().json.criteria || 'General professional skills' }}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "22cbab90-3d20-437f-8b12-e958b7e805f0",
+      "name": "LLM Re-ranker",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1408,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse LLM re-ranker response — graceful fallback to original ranking\nconst llmResponse = $input.first().json;\nlet originalRanked = {};\ntry { originalRanked = $('Rank Candidates').first().json; } catch(e) {}\n\nlet reranked = [];\ntry {\n  const content = llmResponse.choices[0].message.content;\n  const parsed = JSON.parse(content);\n  reranked = parsed.reranked || parsed.candidates || [];\n} catch(e) {\n  // LLM failed or timed out — use original backend ranking unchanged\n  reranked = [];\n}\n\nreturn [{\n  json: {\n    ...originalRanked,\n    ranked_candidates: reranked.length ? reranked : (originalRanked.ranked_candidates || []),\n    llm_reranked: reranked.length > 0,\n    request_id: originalRanked.request_id,\n    workflow_type: originalRanked.workflow_type || 'hr_recruitment'\n  }\n}];"
+      },
+      "id": "50e93844-cac2-4a84-be35-0d2e7e85c782",
+      "name": "Parse Re-rank Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/shortlist/candidates",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"request_id\": \"{{ $json.request_id || '' }}\",\n  \"workflow_type\": \"{{ $json.workflow_type || 'hr_recruitment' }}\",\n  \"step_id\": \"shortlist\",\n  \"ranked_candidates\": {{ JSON.stringify($json.ranked_candidates || []) }},\n  \"top_k\": 3,\n  \"timezone\": \"Asia/Karachi\",\n  \"working_hours_start\": \"10:00\",\n  \"working_hours_end\": \"18:00\",\n  \"slot_duration_minutes\": 30,\n  \"slot_gap_minutes\": 15,\n  \"use_calendar_freebusy\": false\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "a09b296b-8974-44f8-b6ac-a790063ffe8e",
+      "name": "Shortlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1856,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "3978ae36-7591-41e4-ae96-62d954ee2203",
+      "name": "Split Out1",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "cond_has_email",
+              "leftValue": "={{ $json.candidate_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "556b8735-f9f0-4f15-ba72-7fc397b581ec",
+      "name": "Has Candidate Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst interviewStart = item.metadata?.interview_start || item.interview_start || 'TBD';\nconst interviewEnd = item.metadata?.interview_end || item.interview_end || 'TBD';\nconst rank = item.metadata?.shortlist_rank || item.shortlist_rank || 1;\nreturn [{\n  json: {\n    ...item,\n    interview_start: interviewStart,\n    interview_end: interviewEnd,\n    shortlist_rank: rank,\n    calendar_account: 'primary',\n    timezone: 'Asia/Karachi',\n    event_title: 'Interview: ' + (item.candidate_name || 'Candidate'),\n    event_description: 'HR Recruitment Interview\\nCandidate: ' + (item.candidate_name || '') + '\\nEmail: ' + (item.candidate_email || '') + '\\nScore: ' + (item.score || item.adjusted_score || 'N/A') + '\\nShortlist Rank: #' + rank\n  }\n}];"
+      },
+      "id": "ba18665c-c0cf-42b3-bcca-13bd003f2b9d",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2528,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "danishshah9749@gmail.com",
+          "mode": "list",
+          "cachedResultName": "danishshah9749@gmail.com"
+        },
+        "start": "={{ $json.interview_start }}",
+        "end": "={{ $json.interview_end }}",
+        "additionalFields": {
+          "attendees": [
+            {
+              "email": "={{ $json.candidate_email }}"
+            }
+          ],
+          "description": "={{ $json.event_description }}",
+          "sendUpdates": "all",
+          "summary": "={{ $json.event_title }}"
+        }
+      },
+      "id": "0ab28dec-570f-48bd-9e8b-a4d5e81edb1e",
+      "name": "Create an event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2752,
+        96
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "rqgKuTpev2BBV8js",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nreturn [{\n  json: {\n    ...item,\n    calendar_event_id: item.id || null,\n    calendar_link: item.htmlLink || item.hangoutLink || null,\n    step_id: 'schedule_interviews',\n    status: 'completed'\n  }\n}];"
+      },
+      "id": "1e10a605-a85f-4e61-b5ba-e27b6efa4a6a",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2976,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "danishshah9749@gmail.com",
+        "subject": "=Interview Invitation — {{ $json.candidate_name }}",
+        "message": "=Dear {{ $json.candidate_name }},\n\nWe are pleased to invite you for an interview.\n\nScheduled Time: {{ $json.interview_start }} — {{ $json.interview_end }}\nTimezone: Asia/Karachi\n\nCalendar Link: {{ $json.calendar_link || 'Will be sent separately' }}\n\nPlease confirm your availability by replying to this email.\n\nBest regards,\nHR Team",
+        "options": {}
+      },
+      "id": "e714a490-88b6-4286-af9c-67e8ee242e7f",
+      "name": "Send a message!",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3200,
+        192
+      ],
+      "webhookId": "4609e425-3a6d-456e-8abd-7686c9c3297b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "S2rllMbRPFX70D5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nlet candidateEmail = '';\ntry { candidateEmail = $('Edit Fields').first().json.candidate_email || ''; } catch(e) {}\nreturn [{\n  json: {\n    step_id: 'send_emails',\n    status: item.id ? 'completed' : 'failed',\n    message_id: item.id || null,\n    candidate_email: candidateEmail,\n    sent_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "aa3db679-6857-495c-ab4a-f4abd9f5ef68",
+      "name": "Normalize Send Email Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'unsupported',\n    error: 'Source or workflow type not supported',\n    workflow_type: 'unknown',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "39f0922e-400c-4fad-8e77-79194072d3de",
+      "name": "Unsupported Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.1-8b-instant\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"max_tokens\": 400,\n  \"temperature\": 0.1,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a result normalizer. Given any workflow step result, return ONLY valid JSON with exactly these keys: { \\\"success\\\": boolean, \\\"summary\\\": \\\"one sentence describing what happened\\\", \\\"data\\\": {}, \\\"next_actions\\\": [] }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Normalize this workflow step result: {{ JSON.stringify($json) }}\"\n    }\n  ]\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "7b747fdd-21df-49fe-8061-70d507d628e5",
+      "name": "LLM Result Normalizer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handles input from EITHER:\n//   A) LLM Result Normalizer (has choices[0].message.content)\n//   B) Shortlist HTTP node directly (has shortlisted array)\nconst item = $input.first().json;\nlet normalized = {};\n\nif (item.choices && item.choices[0]) {\n  // Coming from LLM Result Normalizer\n  try {\n    normalized = JSON.parse(item.choices[0].message.content);\n  } catch(e) {\n    normalized = { success: true, summary: 'Shortlist step completed', data: item, next_actions: [] };\n  }\n} else {\n  // Coming directly from Shortlist HTTP node\n  normalized = {\n    success: item.status === 'completed',\n    summary: 'Shortlisted ' + (item.shortlisted_count || 0) + ' candidates',\n    data: {\n      shortlisted: item.shortlisted || [],\n      shortlisted_count: item.shortlisted_count || 0,\n      top_k: item.top_k || 3\n    },\n    next_actions: ['send_emails', 'schedule_interviews']\n  };\n}\n\nlet workflowType = 'hr_recruitment';\nlet intentId = null;\ntry {\n  workflowType = $('Merge Intent Context').first().json.workflow_type || 'hr_recruitment';\n  intentId = $('Merge Intent Context').first().json.intent_id || null;\n} catch(e) {}\n\nreturn [{\n  json: {\n    ...normalized,\n    workflow_type: workflowType,\n    intent_id: intentId,\n    step_id: 'normalize_shortlist',\n    llm_normalized: !!(item.choices)\n  }\n}];"
+      },
+      "id": "c6b1dc23-4f6a-49e4-a1fb-ba23ffc83714",
+      "name": "Normalize Shortlist Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        144
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "2da1d413-2031-42c3-b409-9f2fa3e6db0b",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3648,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = items.map(i => i.json);\n\nlet intentId = null;\nlet workflowType = 'hr_recruitment';\nlet llmReranked = false;\ntry { intentId = $('Merge Intent Context').first().json.intent_id; } catch(e) {}\ntry { workflowType = $('Merge Intent Context').first().json.workflow_type; } catch(e) {}\ntry { llmReranked = $('Parse Re-rank Result').first().json.llm_reranked || false; } catch(e) {}\n\nreturn [{\n  json: {\n    status: 'executed',\n    intent_id: intentId,\n    workflow_type: workflowType,\n    results,\n    completed_at: new Date().toISOString(),\n    llm_enhancements: {\n      intent_classified: true,\n      candidates_reranked: llmReranked,\n      result_normalized: true\n    }\n  }\n}];"
+      },
+      "id": "880acd2e-d8de-4942-b887-71b638569617",
+      "name": "Code in JavaScript1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3872,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/api/execution-callback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "2ad5913c-a07b-44c3-8e45-4db88bd2f3c9",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4096,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "eba36339-1900-4baa-be90-c8c178f29bfc",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        4320,
+        144
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract context": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Flatten Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Step": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "LLM Intent Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Intent Classifier": {
+      "main": [
+        [
+          {
+            "node": "Merge Intent Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Intent Context": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Route by Source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by Source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by Source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by Source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Source": {
+      "main": [
+        [
+          {
+            "node": "Get many messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many messages": {
+      "main": [
+        [
+          {
+            "node": "Normalize Email Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Email Source": {
+      "main": [
+        [
+          {
+            "node": "extract source merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text": {
+      "main": [
+        [
+          {
+            "node": "extract source merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract source merge": {
+      "main": [
+        [
+          {
+            "node": "Build Rank Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rank Input": {
+      "main": [
+        [
+          {
+            "node": "Rank Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank Candidates": {
+      "main": [
+        [
+          {
+            "node": "LLM Re-ranker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Re-ranker": {
+      "main": [
+        [
+          {
+            "node": "Parse Re-rank Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Re-rank Result": {
+      "main": [
+        [
+          {
+            "node": "Shortlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shortlist": {
+      "main": [
+        [
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Has Candidate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Candidate Email": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Shortlist Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Create an event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "LLM Result Normalizer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message!",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Result Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Normalize Shortlist Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Shortlist Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message!": {
+      "main": [
+        [
+          {
+            "node": "Normalize Send Email Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Send Email Result": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "bd1842e0-8464-4fce-8c5f-0d7a51953e87",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f882f9971cab6b602cf449a715bdd4913965c401afe09be79b239fa36f691429"
+  },
+  "id": "94GG09LQXNYPlfPX",
+  "tags": [
+    {
+      "updatedAt": "2026-03-09T14:32:41.404Z",
+      "createdAt": "2026-03-09T14:32:41.404Z",
+      "id": "nDi4AR2EUAhn9Kqx",
+      "name": "HR Automation"
+    },
+    {
+      "updatedAt": "2026-03-09T14:32:41.299Z",
+      "createdAt": "2026-03-09T14:32:41.299Z",
+      "id": "nRArwAe7omsOoi7z",
+      "name": "LLM Enhanced"
+    }
+  ]
+}
