@@ -350,8 +350,9 @@ async def n8n_callback(execution_id: str, payload: dict, x_n8n_callback_secret: 
     Expects body like: {"status": "success"|"error", "data": {...}, "error": "message"}
     Validates X-N8N-Callback-Secret header against N8N_CALLBACK_SECRET and maps status.
     """
-    secret = os.getenv("N8N_CALLBACK_SECRET")
-    if not secret or x_n8n_callback_secret != secret:
+    # Accept either N8N_CALLBACK_SECRET or CALLBACK_AUTH_TOKEN for backwards compatibility
+    valid_secrets = set(filter(None, [os.getenv("N8N_CALLBACK_SECRET"), os.getenv("CALLBACK_AUTH_TOKEN")]))
+    if not valid_secrets or x_n8n_callback_secret not in valid_secrets:
         raise HTTPException(status_code=403, detail="Invalid callback secret")
 
     status_in = (payload.get("status") or "").strip().lower()
