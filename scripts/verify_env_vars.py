@@ -56,13 +56,21 @@ def print_table(rows):
     # simple fixed-width table
     name_w = max(len(r[0]) for r in rows) if rows else 10
     hdr = f"┌{'─'*(name_w+2)}┬────────┬──────────────┐"
-    print(hdr)
-    print(f"│ {'Variable'.ljust(name_w)} │ Status │ Note         │")
-    print(f"├{'─'*(name_w+2)}┼────────┼──────────────┤")
-    for name, status, note in rows:
-        note = note or ""
-        print(f"│ {name.ljust(name_w)} │ {'✅ SET' if status=='SET' else '❌ MISS'} │ {note.ljust(12)} │")
-    print(f"└{'─'*(name_w+2)}┴────────┴──────────────┘")
+    try:
+        print(hdr)
+        print(f"│ {'Variable'.ljust(name_w)} │ Status │ Note         │")
+        print(f"├{'─'*(name_w+2)}┼────────┼──────────────┤")
+        for name, status, note in rows:
+            note = note or ""
+            print(f"│ {name.ljust(name_w)} │ {'✅ SET' if status=='SET' else '❌ MISS'} │ {note.ljust(12)} │")
+        print(f"└{'─'*(name_w+2)}┴────────┴──────────────┘")
+    except UnicodeEncodeError:
+        # Fallback to ASCII-friendly output on terminals that can't render box chars
+        print("VARIABLE".ljust(name_w + 2), "STATUS", "NOTE")
+        print("-" * (name_w + 2), "------", "----")
+        for name, status, note in rows:
+            note = note or ""
+            print(name.ljust(name_w + 2), ("SET" if status == "SET" else "MISS"), note)
 
 
 def write_env_example(vars_list):
