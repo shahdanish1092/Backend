@@ -151,7 +151,7 @@ def get_execution_log(conn, request_id: str) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id::text, user_email, module, status, input_payload, output_summary, created_at, updated_at
+            SELECT id::text, user_email, module, status, input_payload, output_summary, created_at, updated_at, completed_at
             FROM execution_logs
             WHERE id = %s
             """,
@@ -169,6 +169,7 @@ def get_execution_log(conn, request_id: str) -> dict[str, Any] | None:
         "output_summary": row[5],
         "created_at": row[6],
         "updated_at": row[7],
+        "completed_at": row[8],
     }
 
 
@@ -260,17 +261,30 @@ async def get_n8n_executions_for_request(request_id: str) -> dict[str, Any]:
 
     url = f"{n8n_base_url.rstrip('/')}/rest/executions"
     api_key = os.getenv("N8N_API_KEY")
-    headers = {"X-N8N-API-KEY": api_key} if api_key else {}
+    auth_mode_used = "none"
 
-    log_info("Fetching n8n executions", url=url, request_id=request_id, headers=list(headers.keys()))
+    log_info("Fetching n8n executions", url=url, request_id=request_id, headers=list(("X-N8N-API-KEY",) if api_key else ()))
 
     async with httpx.AsyncClient(timeout=20.0) as client:
+        # Try X-N8N-API-KEY first for compatibility with API-key-configured instances
+        headers = {"X-N8N-API-KEY": api_key} if api_key else {}
         response = await client.get(url, headers=headers)
+
+        # If API key header yields 401, fall back to Bearer Authorization
+        if response.status_code == 401 and api_key:
+            log_warning("n8n returned 401 with X-N8N-API-KEY, retrying with Bearer Authorization", url=url)
+            headers = {"Authorization": f"Bearer {api_key}"}
+            response = await client.get(url, headers=headers)
+            auth_mode_used = "bearer"
+        elif api_key:
+            auth_mode_used = "x-n8n-api-key"
+
         try:
             response.raise_for_status()
         except Exception:
             log_warning("Failed to fetch n8n executions", url=url, status_code=response.status_code, text=response.text)
             response.raise_for_status()
+
         try:
             payload = response.json()
         except Exception:
