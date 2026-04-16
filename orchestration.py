@@ -120,6 +120,9 @@ def update_execution_log(
     if status is not None:
         fields.append("status = %s")
         params.append(status)
+        # If the execution reached a terminal state, set completed_at timestamp
+        if status in {"completed", "failed", "timeout"}:
+            fields.append("completed_at = now()")
     if output_summary is not _UNSET:
         fields.append("output_summary = %s")
         params.append(json_dumps(output_summary))
@@ -199,28 +202,15 @@ def merge_execution_log_output_summary(conn, request_id: str, patch: Any, *, sta
 
 
 def build_n8n_api_headers() -> dict[str, str]:
+    """Build headers for n8n API calls.
+
+    Always use the `X-N8N-API-KEY` header with the value from `N8N_API_KEY`.
+    This keeps auth consistent across environments and avoids bearer/basic variations.
+    """
     api_key = os.getenv("N8N_API_KEY")
     headers: dict[str, str] = {}
-
-    custom_header = os.getenv("N8N_API_AUTH_HEADER")
     if api_key:
-        if custom_header:
-            headers[custom_header] = api_key
-        else:
-            auth_mode = os.getenv("N8N_API_AUTH_MODE", "x-api-key").strip().lower()
-            if auth_mode in {"bearer", "authorization"}:
-                headers["Authorization"] = f"Bearer {api_key}"
-            else:
-                headers["X-N8N-API-KEY"] = api_key
-
-    # If n8n basic auth credentials are provided, include Basic auth as Authorization header
-    basic_user = os.getenv("N8N_BASIC_AUTH_USER")
-    basic_pass = os.getenv("N8N_BASIC_AUTH_PASSWORD")
-    if basic_user and basic_pass:
-        creds = f"{basic_user}:{basic_pass}".encode("utf-8")
-        b64 = base64.b64encode(creds).decode("ascii")
-        headers["Authorization"] = f"Basic {b64}"
-
+        headers["X-N8N-API-KEY"] = api_key
     return headers
 
 
@@ -270,31 +260,21 @@ async def get_n8n_executions_for_request(request_id: str) -> dict[str, Any]:
 
     url = f"{n8n_base_url.rstrip('/')}/rest/executions"
     api_key = os.getenv("N8N_API_KEY")
-    headers_to_try: list[tuple[str, dict[str, str]]] = []
-    if api_key:
-        headers_to_try.append(("x-api-key", {"X-N8N-API-KEY": api_key}))
-        headers_to_try.append(("bearer", {"Authorization": f"Bearer {api_key}"}))
-    else:
-        headers_to_try.append(("none", {}))
+    headers = {"X-N8N-API-KEY": api_key} if api_key else {}
 
-    log_info("Fetching n8n executions", url=url, request_id=request_id, auth_modes=[name for name, _ in headers_to_try])
+    log_info("Fetching n8n executions", url=url, request_id=request_id, headers=list(headers.keys()))
 
     async with httpx.AsyncClient(timeout=20.0) as client:
-        last_response: httpx.Response | None = None
-        auth_mode_used = "none"
-        for index, (auth_mode, headers) in enumerate(headers_to_try):
-            response = await client.get(url, headers=headers)
-            last_response = response
-            auth_mode_used = auth_mode
-            if response.status_code == 401 and index < len(headers_to_try) - 1:
-                log_warning("n8n execution lookup unauthorized; retrying with fallback auth", url=url, auth_mode=auth_mode)
-                continue
+        response = await client.get(url, headers=headers)
+        try:
             response.raise_for_status()
+        except Exception:
+            log_warning("Failed to fetch n8n executions", url=url, status_code=response.status_code, text=response.text)
+            response.raise_for_status()
+        try:
             payload = response.json()
-            break
-        else:
-            assert last_response is not None
-            last_response.raise_for_status()
+        except Exception:
+            payload = {}
 
     executions = payload.get("data", payload if isinstance(payload, list) else [])
     matches = [item for item in executions if request_id in json_dumps(item)]

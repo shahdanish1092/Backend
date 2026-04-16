@@ -16,11 +16,6 @@ def build_headers():
     api_key = os.environ.get("N8N_API_KEY")
     if api_key:
         headers["X-N8N-API-KEY"] = api_key
-    basic_user = os.environ.get("N8N_BASIC_AUTH_USER")
-    basic_pass = os.environ.get("N8N_BASIC_AUTH_PASSWORD")
-    if basic_user and basic_pass:
-        creds = f"{basic_user}:{basic_pass}".encode("utf-8")
-        headers["Authorization"] = "Basic " + base64.b64encode(creds).decode("ascii")
     return headers
 
 
