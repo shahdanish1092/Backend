@@ -141,6 +141,14 @@ async def post_message(payload: dict):
                 **parameters
             }
         }
+        
+        # DEBUG: Log the payload we are about to send
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE execution_logs SET output_summary = %s WHERE id = %s",
+                (json.dumps({"debug_trigger_payload": built_payload}), execution_id)
+            )
+        conn.commit()
 
         # Step 6: POST to webhook
         import httpx
