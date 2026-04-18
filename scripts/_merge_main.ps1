@@ -22,6 +22,8 @@ try {
 
 Write-Output "Merging update/hr-callback-n8n into main..."
 $mergeOutput = git merge --no-edit update/hr-callback-n8n 2>&1
+Write-Output "Merge command output:"
+Write-Output $mergeOutput
 if ($LASTEXITCODE -ne 0) {
     Write-Output "Merge conflict detected, aborting and retrying preferring branch changes"
     try {
