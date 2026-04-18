@@ -614,6 +614,11 @@ async def send_email(req: SendEmailRequest):
     
     if not user_email:
         raise HTTPException(status_code=400, detail="Missing user_email for sending email")
+
+    if not req.candidate_email:
+        # Gracefully skip if no email provided (common in mock tests)
+        request_id = _reuse_or_create_request(str(req.request_id), req.user_email, "send_emails", payload, "shortlisted")
+        return {"status": "skipped", "message": "No candidate email provided", "request_id": request_id}
         
     conn = get_db_connection()
     try:
