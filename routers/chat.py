@@ -129,11 +129,11 @@ async def post_message(payload: dict):
         conn.commit()
 
         # Step 5: Build payload
-        backend_public = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+        backend_public = (os.getenv("BACKEND_PUBLIC_URL") or os.getenv("FASTAPI_BASE_URL") or "http://localhost:8000").rstrip("/")
         built_payload = {
             "request_id": execution_id,
             "workflow_type": domain,
-            "callback_url": f"{backend_public.rstrip('/')}/api/execution-callback",
+            "callback_url": f"{backend_public}/api/execution-callback",
             "backend_base_url": backend_public,
             "n8n_callback_secret": os.getenv("N8N_CALLBACK_SECRET", ""),
             "payload": {

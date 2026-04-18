@@ -66,11 +66,11 @@ async def trigger_invoice_webhook(
         conn.commit()
 
         # Build payload
-        backend_public = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+        backend_public = (os.getenv("BACKEND_PUBLIC_URL") or os.getenv("FASTAPI_BASE_URL") or "http://localhost:8000").rstrip("/")
         webhook_payload = {
             "request_id": execution_id,
             "workflow_type": "invoice",
-            "callback_url": f"{backend_public.rstrip('/')}/api/execution-callback",
+            "callback_url": f"{backend_public}/api/execution-callback",
             "backend_base_url": backend_public,
             "n8n_callback_secret": os.getenv("N8N_CALLBACK_SECRET", ""),
             "payload": {

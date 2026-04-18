@@ -104,7 +104,8 @@ class CreateCalendarEventRequest(BaseModel):
 
 
 def _callback_base_url() -> str:
-    return os.getenv("FASTAPI_CALLBACK_URL", os.getenv("FASTAPI_BASE_URL", "http://127.0.0.1:8000")).rstrip("/")
+    url = os.getenv("BACKEND_PUBLIC_URL") or os.getenv("FASTAPI_CALLBACK_URL") or os.getenv("FASTAPI_BASE_URL") or "http://127.0.0.1:8000"
+    return url.rstrip("/")
 
 
 def _extract_text_from_pdf_bytes(bts: bytes) -> str:
@@ -533,6 +534,7 @@ async def hr_execute(req: HRExecuteRequest):
         body = {
             "request_id": request_id,
             "workflow_type": "hr_recruitment",
+            "backend_base_url": _callback_base_url(),
             "payload": {
                 "user_email": req.user_email,
                 "criteria": req.criteria,
