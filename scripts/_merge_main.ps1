@@ -7,7 +7,14 @@ Write-Output "Fetching origin..."
 git fetch origin --prune
 
 # Checkout or create main
-if (git rev-parse --verify main 2>$null) {
+$hasMain = $false
+try {
+    git rev-parse --verify main >$null 2>$null
+    $hasMain = $true
+} catch {
+    $hasMain = $false
+}
+if ($hasMain) {
     git checkout main
 } else {
     git checkout -b main
