@@ -71,8 +71,8 @@ async def user_status(user_email: str):
                 }
                 
                 recent_activity.append({
-                    "action": action_map.get(module, f"Executed {module} workflow"),
-                    "details": f"Status: {status}",
+                    "action": action_map.get(module, f"Executed {module.capitalize()} automation"),
+                    "details": f"Status: {status.capitalize()}",
                     "time": rel_time,
                     "type": module
                 })
@@ -84,13 +84,17 @@ async def user_status(user_email: str):
 
     # System status
     system_status = "degraded"
-    n8n_base = os.getenv("N8N_BASE_URL", "https://n8n-production-b3aa.up.railway.app")
+    n8n_base = os.getenv("N8N_BASE_URL", "https://n8n-production-8c140.up.railway.app")
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get(f"{n8n_base.rstrip('/')}/api/v1/workflows")
-            if resp.status_code == 200 or resp.status_code == 401:
-                # 401 is fine, it means the API is up but requires auth, which proves it's active
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{n8n_base.rstrip('/')}/healthz")
+            if resp.status_code == 200:
                 system_status = "active"
+            else:
+                # fallback check if healthz is not enabled
+                resp = await client.get(f"{n8n_base.rstrip('/')}/api/v1/workflows")
+                if resp.status_code in (200, 401):
+                    system_status = "active"
     except Exception:
         pass
 
