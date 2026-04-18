@@ -12,7 +12,7 @@ def test_classify_invoice():
 def test_n8n_callback_rejects_invalid_secret():
     client = TestClient(app)
     r = client.post("/api/webhooks/n8n/callback/doesntmatter", json={"status": "success", "data": {}}, headers={"X-N8N-Callback-Secret": "wrong"})
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 def test_n8n_callback_calls_update(monkeypatch):
@@ -25,6 +25,8 @@ def test_n8n_callback_calls_update(monkeypatch):
     monkeypatch.setattr(internal_module, "update_execution_status", fake_update)
     # set proper secret
     monkeypatch.setenv("N8N_CALLBACK_SECRET", "s3cret")
+    # ensure execution exists (avoid DB cursor requirement in DummyConn)
+    monkeypatch.setattr(internal_module, "get_execution_log", lambda conn, rid: True)
     # patch db connection to dummy
     class DummyConn:
         def close(self):
@@ -39,7 +41,7 @@ def test_n8n_callback_calls_update(monkeypatch):
         headers={"X-N8N-Callback-Secret": "s3cret"},
     )
     assert r.status_code == 200
-    assert r.json().get("received") is True
+    assert r.json().get("status") == "ok"
     assert calls.get('called') is True
 
 

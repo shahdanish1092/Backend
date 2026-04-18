@@ -20,9 +20,9 @@ def build_headers():
 
 
 def main():
-    n8n_base = os.environ.get("N8N_BASE_URL") or "https://n8n-production-b3aa.up.railway.app/"
+    n8n_base = os.environ.get("N8N_BASE_URL") or os.environ.get("N8N_WEBHOOK_BASE_URL") or "http://127.0.0.1:5678"
     workflow_id = os.environ.get("N8N_WORKFLOW_ID") or "cUNV8MuHEZMQpn4U"
-    backend_cb = os.environ.get("BACKEND_PUBLIC_URL", "https://backend-production-8d62.up.railway.app").rstrip('/') + "/api/execution-callback"
+    backend_cb = (os.environ.get("BACKEND_PUBLIC_URL") or os.environ.get("FASTAPI_BASE_URL") or "http://127.0.0.1:8000").rstrip('/') + "/api/execution-callback"
 
     exec_id = str(uuid.uuid4())
     body = {
@@ -42,7 +42,7 @@ def main():
         if r.status_code == 405:
             print("Run endpoint returned 405; falling back to webhook trigger")
             # fallback: trigger the workflow webhook path (common pattern for workflows with Webhook trigger)
-            webhook_path = os.environ.get("N8N_WEBHOOK_PATH", "execute-workflow")
+            webhook_path = os.environ.get("N8N_WEBHOOK_PATH", f"execute-workflow-{workflow_id}")
             webhook_url = n8n_base.rstrip('/') + f"/webhook/{webhook_path}"
             print("Triggering webhook at", webhook_url)
             wr = client.post(webhook_url, json=body)

@@ -344,16 +344,37 @@ async def n8n_ping():
 
 
 @router.post("/webhooks/n8n/callback/{execution_id}")
-async def n8n_callback(execution_id: str, payload: dict, x_n8n_callback_secret: str | None = Header(None)):
+async def n8n_callback(
+    execution_id: str | None = None,
+    payload: dict = {},
+    x_n8n_callback_secret: str | None = Header(None),
+    authorization: str | None = Header(None),
+):
     """Generic receiver for n8n workflow callbacks.
 
-    Expects body like: {"status": "success"|"error", "data": {...}, "error": "message"}
-    Validates X-N8N-Callback-Secret header against N8N_CALLBACK_SECRET and maps status.
+    Expects body like: {"status": "success"|"failed", "result": {...}, "error": "message"}
+    Validates header value against `N8N_CALLBACK_SECRET` (or `CALLBACK_AUTH_TOKEN`) using either
+    the `X-N8N-Callback-Secret` header or an `Authorization: Bearer <token>` header.
+    Returns 401 if the provided secret does not match.
     """
     # Accept either N8N_CALLBACK_SECRET or CALLBACK_AUTH_TOKEN for backwards compatibility
     valid_secrets = set(filter(None, [os.getenv("N8N_CALLBACK_SECRET"), os.getenv("CALLBACK_AUTH_TOKEN")]))
-    if not valid_secrets or x_n8n_callback_secret not in valid_secrets:
-        raise HTTPException(status_code=403, detail="Invalid callback secret")
+
+    provided = x_n8n_callback_secret
+    if not provided and authorization:
+        # Accept 'Bearer <token>' or raw token in Authorization
+        if authorization.lower().startswith("bearer "):
+            provided = authorization[7:]
+        else:
+            provided = authorization
+
+    if not valid_secrets or provided not in valid_secrets:
+        raise HTTPException(status_code=401, detail="Invalid callback secret")
+
+    # allow callbacks to include request_id in the payload instead of path param
+    request_id = execution_id or payload.get("request_id")
+    if not request_id:
+        raise HTTPException(status_code=400, detail="Missing request id")
 
     status_in = (payload.get("status") or "").strip().lower()
     if status_in in {"success", "completed", "ok"}:
@@ -365,11 +386,19 @@ async def n8n_callback(execution_id: str, payload: dict, x_n8n_callback_secret: 
 
     conn = get_db_connection()
     try:
-        update_execution_status(conn, execution_id, mapped, result=payload.get("data"), error=payload.get("error"))
+        # ensure execution exists
+        if not get_execution_log(conn, request_id):
+            raise HTTPException(status_code=404, detail="Execution not found")
+
+        # Use 'result' key when present, fallback to 'data'
+        result = payload.get("result") if "result" in payload else payload.get("data")
+        update_execution_status(conn, request_id, mapped, result=result, error=payload.get("error"))
+    except HTTPException:
+        raise
     except Exception as exc:
-        log_exception("Failed to persist n8n callback", execution_id=execution_id, payload=payload)
+        log_exception("Failed to persist n8n callback", execution_id=request_id, payload=payload)
         raise HTTPException(status_code=500, detail=f"Failed to persist callback: {exc}") from exc
     finally:
         conn.close()
 
-    return {"received": True}
+    return {"status": "ok"}

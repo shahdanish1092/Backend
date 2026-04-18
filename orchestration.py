@@ -311,12 +311,49 @@ async def ping_n8n_health() -> dict[str, Any]:
     return {"base_url": n8n_base_url.rstrip("/"), "status_code": response.status_code, "body": body}
 
 
-async def trigger_n8n_workflow(workflow_id: str, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
-    """Trigger a workflow run via the n8n REST API.
+async def trigger_n8n_via_webhook(workflow_id: str, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
+    """Trigger a workflow run by calling the workflow's Webhook trigger.
+
+    Uses N8N_WEBHOOK_BASE_URL and N8N_WEBHOOK_PATH (or falls back to a sensible default).
+    Webhook calls do NOT include `X-N8N-API-KEY` — the webhook URL is the auth.
+    Returns a dict describing the response.
+    """
+    webhook_base = os.getenv("N8N_WEBHOOK_BASE_URL") or os.getenv("N8N_BASE_URL")
+    if not webhook_base:
+        raise RuntimeError("N8N_WEBHOOK_BASE_URL or N8N_BASE_URL is not configured")
+
+    webhook_path = os.getenv("N8N_WEBHOOK_PATH") or f"execute-workflow-{workflow_id}"
+
+    backend_public = os.getenv("BACKEND_PUBLIC_URL") or os.getenv("FASTAPI_BASE_URL") or os.getenv("FASTAPI_CALLBACK_URL")
+    callback_url = None
+    if backend_public:
+        callback_url = f"{backend_public.rstrip('/')}/api/webhooks/n8n/callback/{execution_id}"
+
+    url = f"{webhook_base.rstrip('/')}/webhook/{webhook_path}"
+
+    body: dict[str, Any] = {"request_id": execution_id}
+    if callback_url:
+        body["callback_url"] = callback_url
+    # include the original payload as 'input' and also surface common keys
+    body["input"] = payload or {}
+    if isinstance(payload, dict):
+        for k in ("text", "user_email", "connectors"):
+            if k in payload:
+                body[k] = payload[k]
+
+    # Webhooks don't require API key header
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    resp = await post_with_retry(url, json_body=body, headers=headers, timeout=20.0, attempts=3)
+    try:
+        return {"method": "webhook", "status_code": resp.status_code, "json": resp.json()}
+    except Exception:
+        return {"method": "webhook", "status_code": resp.status_code, "text": resp.text}
+
+
+async def trigger_n8n_via_api(workflow_id: str, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
+    """Fallback: trigger a workflow via the n8n REST API using the API key.
 
     Posts to: {N8N_BASE_URL}/api/v1/workflows/{workflow_id}/run
-    Includes a callback URL that n8n should POST results to.
-    Returns the parsed JSON response or a dict with status/text on non-JSON.
     """
     n8n_base_url = os.getenv("N8N_BASE_URL")
     if not n8n_base_url:
@@ -328,22 +365,34 @@ async def trigger_n8n_workflow(workflow_id: str, payload: dict[str, Any], execut
         callback_url = f"{backend_public.rstrip('/')}/api/webhooks/n8n/callback/{execution_id}"
 
     url = f"{n8n_base_url.rstrip('/')}/api/v1/workflows/{workflow_id}/run"
-    body: dict[str, Any] = {
-        "execution_id": execution_id,
-        "input": payload or {},
-    }
+    body: dict[str, Any] = {"execution_id": execution_id, "input": payload or {}}
     if callback_url:
         body["callback_url"] = callback_url
 
     headers = build_n8n_api_headers()
-    # ngrok sometimes injects an interstitial for non-browser requests; harmless to include
     headers.setdefault("ngrok-skip-browser-warning", "true")
 
     resp = await post_with_retry(url, json_body=body, headers=headers, timeout=20.0, attempts=3)
     try:
-        return resp.json()
+        return {"method": "api", "status_code": resp.status_code, "json": resp.json()}
     except Exception:
-        return {"status_code": resp.status_code, "text": resp.text}
+        return {"method": "api", "status_code": resp.status_code, "text": resp.text}
+
+
+async def trigger_n8n_workflow(workflow_id: str, payload: dict[str, Any], execution_id: str) -> dict[str, Any]:
+    """Primary entry: attempt webhook trigger first, then fall back to REST API if webhook fails.
+
+    Returns a dict with at least a `method` key indicating `webhook` or `api` and response details.
+    Raises on unrecoverable errors.
+    """
+    # Try webhook first
+    try:
+        return await trigger_n8n_via_webhook(workflow_id, payload, execution_id)
+    except Exception as exc:
+        log_warning("Webhook trigger failed, falling back to REST API", workflow_id=workflow_id, error=str(exc))
+
+    # Fallback to API trigger
+    return await trigger_n8n_via_api(workflow_id, payload, execution_id)
 
 
 def update_execution_status(conn, execution_id: str, status: str, result: dict | None = None, error: str | None = None) -> int:

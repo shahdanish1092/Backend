@@ -113,10 +113,11 @@ async def post_message(payload: dict):
             merge_execution_log_output_summary(conn, request_id, {"error": str(exc)}, status="failed_to_trigger")
             return {"execution_id": request_id, "domain": domain, "action": classification.get("action"), "message": "Failed to trigger workflow", "error": str(exc)}
 
-        # update to running
-        merge_execution_log_output_summary(conn, request_id, {"workflow": workflow_name, "n8n_response": resp}, status="running")
+        # If webhook triggered, mark as 'triggered'; otherwise keep 'running' for API-triggered runs
+        new_status = "triggered" if isinstance(resp, dict) and resp.get("method") == "webhook" else "running"
+        merge_execution_log_output_summary(conn, request_id, {"workflow": workflow_name, "n8n_response": resp}, status=new_status)
 
-        return {"execution_id": request_id, "domain": domain, "action": classification.get("action"), "message": f"Workflow started. Tracking execution {request_id}."}
+        return {"execution_id": request_id, "domain": domain, "action": classification.get("action"), "message": f"Workflow started. Tracking execution {request_id}.", "trigger_method": resp.get("method") if isinstance(resp, dict) else None}
     finally:
         conn.close()
 

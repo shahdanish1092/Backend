@@ -48,6 +48,7 @@ def test_e2e_workflow_run():
     final_status = None
     final_payload = None
     deadline = time.time() + 30
+    TERMINAL_STATES = {"success", "completed", "failed", "failed_to_trigger", "timeout"}
     while time.time() < deadline:
         time.sleep(5)
         try:
@@ -67,7 +68,7 @@ def test_e2e_workflow_run():
         payload = er.json()
         status = (payload.get("status") or "").lower()
         print("Polled status:", status)
-        if status in {"completed", "success", "failed", "timeout"}:
+        if status in TERMINAL_STATES:
             final_status = status
             final_payload = payload
             break
@@ -97,8 +98,23 @@ def test_e2e_workflow_run():
             print("completed_at missing in execution response; ensure migrations ran and backend returns completed_at")
             overall_ok = False
     else:
-        print("Execution did not complete successfully. status=", final_status, "payload=", final_payload)
-        overall_ok = False
+        # Provide clearer failure messages for common terminal states
+        if final_status == "failed_to_trigger":
+            print("Execution failed to trigger. Backend could not reach n8n.")
+            print("Execution record:", final_payload)
+            print("Error detail:", (final_payload or {}).get("output_summary"))
+            overall_ok = False
+        elif final_status == "failed":
+            print("Workflow executed but returned failure. Check n8n workflow logs.")
+            print("Execution record:", final_payload)
+            overall_ok = False
+        elif final_status == "timeout":
+            print("Workflow was triggered but no callback received. Check N8N_CALLBACK_SECRET and BACKEND_PUBLIC_URL.")
+            print("Execution record:", final_payload)
+            overall_ok = False
+        else:
+            print("Execution did not complete successfully. status=", final_status, "payload=", final_payload)
+            overall_ok = False
 
     print("========== E2E TEST RESULTS ===========")
     print(f"Health Check:     {'✅ PASS' if health_pass else '❌ FAIL'}")
