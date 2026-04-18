@@ -14,8 +14,10 @@ async def google_auth():
     """Builds Google auth URL and redirects user to accounts.google.com."""
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
-    if not client_id or not redirect_uri:
-        raise HTTPException(status_code=500, detail="Google OAuth not configured")
+    if not client_id:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID is missing in Backend Variables")
+    if not redirect_uri:
+        raise HTTPException(status_code=500, detail="GOOGLE_REDIRECT_URI is missing in Backend Variables")
 
     scope = "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify"
     params = {
@@ -40,8 +42,12 @@ async def google_callback(request: Request):
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
-    if not client_id or not client_secret or not redirect_uri:
-        raise HTTPException(status_code=500, detail="Google OAuth not configured")
+    if not client_id:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID missing")
+    if not client_secret:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_SECRET missing")
+    if not redirect_uri:
+        raise HTTPException(status_code=500, detail="GOOGLE_REDIRECT_URI missing")
 
     # Exchange code for tokens
     token_url = "https://oauth2.googleapis.com/token"
