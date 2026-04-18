@@ -334,6 +334,9 @@ async def trigger_n8n_via_webhook(workflow_id: str, payload: dict[str, Any], exe
     body: dict[str, Any] = {"request_id": execution_id}
     if callback_url:
         body["callback_url"] = callback_url
+    # Provide backend base URL explicitly so n8n workflows don't need to access env vars
+    if backend_public:
+        body["backend_base_url"] = backend_public.rstrip("/")
     # include the original payload as 'input' and also surface common keys
     body["input"] = payload or {}
     if isinstance(payload, dict):
@@ -368,6 +371,9 @@ async def trigger_n8n_via_api(workflow_id: str, payload: dict[str, Any], executi
     body: dict[str, Any] = {"execution_id": execution_id, "input": payload or {}}
     if callback_url:
         body["callback_url"] = callback_url
+    # Provide backend base URL explicitly so n8n workflows don't need to access env vars
+    if backend_public:
+        body["backend_base_url"] = backend_public.rstrip("/")
 
     headers = build_n8n_api_headers()
     headers.setdefault("ngrok-skip-browser-warning", "true")
