@@ -30,7 +30,7 @@
             },
             {
               "name": "workflow_type",
-              "value": "={{ $json.body.workflow_type }}"
+              "value": "={{ $json.body?.workflow_type || 'hr' }}"
             },
             {
               "name": "user_email",

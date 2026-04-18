@@ -432,54 +432,69 @@ async def shortlist_candidates(req: ShortlistRequest):
     return {"shortlisted": shortlisted_list, "request_id": str(req.request_id), "step_id": "shortlist", "status": "completed"}
 
 
+from fastapi import Request
+
 @router.post("/execution-callback")
-async def execution_callback(req: ExecutionCallbackRequest):
+async def execution_callback(request: Request):
+    payload = await request.json()
+    
+    # Validation step 3: Validate X-N8N-Callback-Secret
+    x_secret = request.headers.get("X-N8N-Callback-Secret")
+    env_secret = os.getenv("N8N_CALLBACK_SECRET")
+    
+    # Internal routing check - if it's from Railway network and secret is empty, allow for backwards compatibility
+    client_ip = request.client.host if request.client else ""
+    is_internal = "10." in client_ip or "192.168." in client_ip or "172." in client_ip
+    
+    if not (not x_secret and is_internal):
+        if env_secret and x_secret != env_secret:
+            raise HTTPException(status_code=403, detail="Invalid callback secret")
+
+    # Step 1: Normalize
+    execution_id = payload.get("request_id") or payload.get("execution_id")
+    if not execution_id:
+        raise HTTPException(status_code=400, detail="Missing execution_id or request_id")
+        
+    status_raw = payload.get("status", "completed")
+    if status_raw in ["success", "completed", "ok"]:
+        status = "completed"
+    elif status_raw in ["error", "failed"]:
+        status = "failed"
+    else:
+        status = status_raw
+
+    # Format A -> results, Format B -> data. Also check error.
+    result_data = payload.get("results") if "results" in payload else payload.get("data")
+    error_msg = payload.get("error")
+    
     conn = get_db_connection()
-    results = req.results or []
-    metadata = req.metadata or {}
     try:
-        user_email = metadata.get("user_email", "system")
-        module = req.workflow_type or "workflow"
-        request_id = str(req.request_id)
-        rowcount = _merge_step_output(
-            conn,
-            request_id,
-            "execution_callback",
-            {
-                "step_id": "execution_callback",
-                "status": req.status,
-                "results": results,
-                "metadata": metadata,
-            },
-            status=req.status or "completed",
-        )
-        if rowcount == 0:
-            upsert_execution_log(
-                conn,
-                request_id,
-                user_email=user_email,
-                module=module,
-                input_payload={"request_id": request_id},
-                status=req.status,
-                output_summary={
-                    "results": results,
-                    "metadata": metadata,
-                    "steps": {
-                        "execution_callback": {
-                            "status": req.status,
-                            "results": results,
-                            "metadata": metadata,
-                        }
-                    },
-                },
+        # Step 2: Update execution_logs directly
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE execution_logs 
+                SET status = %s,
+                    result_payload = %s,
+                    error_message = %s,
+                    completed_at = now(),
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (status, json.dumps(result_data) if result_data is not None else None, str(error_msg) if error_msg else None, execution_id)
             )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Execution not found")
+        conn.commit()
+    except HTTPException:
+        raise
     except Exception as exc:
-        log_exception("Execution callback persistence failed", request_id=str(req.request_id), workflow_type=req.workflow_type)
+        log_exception("Execution callback persistence failed", execution_id=execution_id)
         raise HTTPException(status_code=500, detail=f"Execution callback failed: {exc}") from exc
     finally:
         conn.close()
 
-    return {"status": "ok", "request_id": str(req.request_id)}
+    return {"status": "ok", "execution_id": str(execution_id)}
 
 
 @router.post("/hr/execute")
@@ -588,9 +603,65 @@ async def hr_execute(req: HRExecuteRequest):
         conn.close()
 
 
+from auth.google_oauth import refresh_token_if_needed
+
 @router.post("/send-email")
 async def send_email(req: SendEmailRequest):
     payload = req.model_dump()
+    user_email = req.user_email
+    
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Missing user_email for sending email")
+        
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT access_token, refresh_token FROM google_tokens WHERE user_email = %s", (user_email,))
+            token_row = cur.fetchone()
+            
+        if not token_row:
+            raise HTTPException(status_code=400, detail="User has not connected Google account")
+            
+        access_token, refresh_token = token_row[0], token_row[1]
+        
+        # Refresh tokens
+        creds = refresh_token_if_needed(access_token, refresh_token)
+        
+        # Update DB if token was refreshed
+        if creds.token != access_token:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE google_tokens SET access_token = %s WHERE user_email = %s",
+                    (creds.token, user_email)
+                )
+            conn.commit()
+
+        # Build email
+        from email.message import EmailMessage
+        import base64
+        msg = EmailMessage()
+        msg.set_content(req.body)
+        msg['To'] = req.candidate_email
+        msg['From'] = user_email
+        msg['Subject'] = req.subject
+        raw_msg = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+                json={"raw": raw_msg}
+            )
+            resp.raise_for_status()
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log_exception("Failed to send email via Google API", request_id=str(req.request_id), error=str(exc))
+        raise HTTPException(status_code=502, detail=f"Failed to send email: {exc}")
+    finally:
+        conn.close()
+
     request_id = _reuse_or_create_request(str(req.request_id), req.user_email, "send_emails", payload, "shortlisted")
     return {"status": "ok", "step_id": "send_emails", "request_id": request_id}
 
@@ -598,11 +669,69 @@ async def send_email(req: SendEmailRequest):
 @router.post("/create-calendar-event")
 async def create_calendar_event(req: CreateCalendarEventRequest):
     payload = req.model_dump()
+    user_email = req.user_email
+    
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Missing user_email for Google Calendar")
+        
+    conn = get_db_connection()
+    event_id = f"evt_{str(req.request_id)[:8]}"
+    calendar_link = ""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT access_token, refresh_token FROM google_tokens WHERE user_email = %s", (user_email,))
+            token_row = cur.fetchone()
+            
+        if not token_row:
+            raise HTTPException(status_code=400, detail="User has not connected Google account")
+            
+        access_token, refresh_token = token_row[0], token_row[1]
+        
+        # Refresh tokens
+        creds = refresh_token_if_needed(access_token, refresh_token)
+        
+        if creds.token != access_token:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE google_tokens SET access_token = %s WHERE user_email = %s",
+                    (creds.token, user_email)
+                )
+            conn.commit()
+
+        # Build calendar event
+        event_body = {
+            "summary": f"Interview: {req.candidate_name}",
+            "description": f"Automated interview scheduling for {req.candidate_name}",
+            "start": {"dateTime": req.start_time},
+            "end": {"dateTime": req.end_time},
+            "attendees": [{"email": req.candidate_email}]
+        }
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+                headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+                json=event_body
+            )
+            resp.raise_for_status()
+            resp_data = resp.json()
+            event_id = resp_data.get("id")
+            calendar_link = resp_data.get("htmlLink")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log_exception("Failed to create Google Calendar event", request_id=str(req.request_id), error=str(exc))
+        raise HTTPException(status_code=502, detail=f"Failed to create calendar event: {exc}")
+    finally:
+        conn.close()
+
     request_id = _reuse_or_create_request(str(req.request_id), req.user_email, "schedule_interviews", payload, "shortlisted")
     return {
-        "status": "ok",
+        "status": "completed",
         "step_id": "schedule_interviews",
-        "event_id": f"evt_{request_id[:8]}",
+        "event_id": event_id,
+        "calendar_link": calendar_link,
         "start_time": req.start_time,
         "end_time": req.end_time,
         "request_id": request_id,

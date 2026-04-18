@@ -30,7 +30,11 @@ def test_e2e_workflow_run():
         raise AssertionError("Health check failed")
 
     # Trigger workflow
-    payload = {"text": "Test HR workflow", "active_connectors": [], "user_email": USER_EMAIL}
+    payload = {
+        "text": "Rank these candidates for the HR position: Alice and Bob",
+        "active_connectors": ["hr"],
+        "user_email": USER_EMAIL
+    }
     print("Triggering backend chat endpoint at", BACKEND + "/api/chat/message")
     r = requests.post(BACKEND + "/api/chat/message", json=payload, timeout=10)
     if r.status_code != 200:
@@ -117,10 +121,10 @@ def test_e2e_workflow_run():
             overall_ok = False
 
     print("========== E2E TEST RESULTS ===========")
-    print(f"Health Check:     {'✅ PASS' if health_pass else '❌ FAIL'}")
-    print(f"Trigger Workflow: {'✅ PASS' if trigger_pass else '❌ FAIL'} (request_id: {execution_id if execution_id else 'N/A'})")
-    print(f"Execution Poll:   {'✅ PASS' if poll_pass else '❌ FAIL'} (status: {final_status})")
-    print(f"Result Data:      {'✅ PASS' if result_pass else '❌ FAIL'}")
+    print(f"Health Check:     {'PASS' if health_pass else 'FAIL'}")
+    print(f"Trigger Workflow: {'PASS' if trigger_pass else 'FAIL'} (request_id: {execution_id if execution_id else 'N/A'})")
+    print(f"Execution Poll:   {'PASS' if poll_pass else 'FAIL'} (status: {final_status})")
+    print(f"Result Data:      {'PASS' if result_pass else 'FAIL'}")
     print("=======================================")
 
     if not overall_ok:
