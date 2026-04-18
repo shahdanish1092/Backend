@@ -1,0 +1,137 @@
+{
+  "name": "HR Recruitment Orchestrator (Self-Healing)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute",
+              "value": 5
+            }
+          ]
+        },
+        "filters": {
+          "q": "Resume OR CV OR \"Job Application\""
+        },
+        "downloadAttachments": true
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "searchText": "AI Recruitment Tracker",
+        "limit": 1
+      },
+      "id": "search-sheet",
+      "name": "Search Spreadsheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sheet-exists",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-sheet-exists",
+      "name": "If Sheet Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "title": "AI Recruitment Tracker",
+        "sheetsUi": {
+          "sheetValues": [
+            {
+              "title": "Candidates",
+              "headerRow": [
+                "Name",
+                "Email",
+                "Score",
+                "Summary",
+                "Created At"
+              ]
+            }
+          ]
+        }
+      },
+      "id": "create-sheet",
+      "name": "Create Spreadsheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [950, 450]
+    },
+    {
+      "parameters": {
+        "url": "https://backend-production-0577.up.railway.app/api/chat/message",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'Rank this resume: ' + $item(0).$node['Gmail Trigger'].json.snippet, user_email: 'danishshah9749@gmail.com', active_connectors: ['hr'] }) }}"
+      },
+      "id": "call-backend",
+      "name": "Call Backend AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{ $item(0).$node['If Sheet Exists?'].branch === 'main' ? $item(0).$node['Search Spreadsheet'].json.id : $item(0).$node['Create Spreadsheet'].json.spreadsheetId }}",
+        "sheetName": "Candidates",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.candidate_name || 'Anonymous' }}",
+            "Email": "={{ $json.candidate_email || 'N/A' }}",
+            "Score": "={{ $json.score || 0 }}",
+            "Summary": "={{ $json.summary || '' }}",
+            "Created At": "={{ $now }}"
+          }
+        }
+      },
+      "id": "update-sheet",
+      "name": "Update Spreadsheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": { "main": [[{ "node": "Search Spreadsheet", "type": "main", "index": 0 }]] },
+    "Search Spreadsheet": { "main": [[{ "node": "If Sheet Exists?", "type": "main", "index": 0 }]] },
+    "If Sheet Exists?": { 
+        "main": [[{ "node": "Call Backend AI", "type": "main", "index": 0 }]],
+        "true": [[{ "node": "Call Backend AI", "type": "main", "index": 0 }]],
+        "false": [[{ "node": "Create Spreadsheet", "type": "main", "index": 0 }]]
+    },
+    "Create Spreadsheet": { "main": [[{ "node": "Call Backend AI", "type": "main", "index": 0 }]] },
+    "Call Backend AI": { "main": [[{ "node": "Update Spreadsheet", "type": "main", "index": 0 }]] }
+  }
+}
