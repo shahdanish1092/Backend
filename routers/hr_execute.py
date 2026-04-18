@@ -706,8 +706,10 @@ async def create_calendar_event(req: CreateCalendarEventRequest):
             "description": f"Automated interview scheduling for {req.candidate_name}",
             "start": {"dateTime": req.start_time},
             "end": {"dateTime": req.end_time},
-            "attendees": [{"email": req.candidate_email}]
         }
+        
+        if req.candidate_email and "@" in req.candidate_email:
+            event_body["attendees"] = [{"email": req.candidate_email}]
         
         async with httpx.AsyncClient() as client:
             resp = await client.post(
