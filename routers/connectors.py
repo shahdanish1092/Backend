@@ -2,7 +2,7 @@ import os
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 import httpx
 
 from database import get_db_connection
@@ -14,21 +14,50 @@ CONNECTOR_TYPES = ["gmail", "google_drive", "google_calendar", "google_sheets", 
 
 
 @router.get("")
-async def list_connectors(user_email: str):
+async def list_connectors(user_email: str | None = None, x_user_email: str | None = Header(None)):
     """Return available connector types and whether connected for a user."""
+    user_email = user_email or x_user_email
+    if not user_email:
+        raise HTTPException(status_code=400, detail="Missing user_email")
+    
     conn = get_db_connection()
     try:
+        # Check Google tokens
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT scopes, created_at FROM google_tokens WHERE user_email = %s",
+                (user_email,),
+            )
+            google_row = cur.fetchone()
+        
+        has_google = bool(google_row)
+        
+        # Check other connectors
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT connector_type, connected, metadata FROM connectors WHERE user_email = %s",
                 (user_email,),
             )
             rows = cur.fetchall()
+        
         by_type = {r[0]: {"connected": r[1], "metadata": r[2]} for r in rows}
+        
         results = []
         for c in CONNECTOR_TYPES:
-            info = by_type.get(c, {"connected": False, "metadata": None})
-            results.append({"connector": c, "connected": bool(info.get("connected")), "metadata": info.get("metadata")})
+            if c.startswith("google_") or c == "gmail":
+                connected = has_google
+                metadata = {"connected_at": google_row[1].isoformat()} if google_row else None
+            else:
+                info = by_type.get(c, {"connected": False, "metadata": None})
+                connected = bool(info.get("connected"))
+                metadata = info.get("metadata")
+                
+            results.append({
+                "connector": c,
+                "connected": connected,
+                "metadata": metadata
+            })
+            
         return {"connectors": results}
     finally:
         conn.close()

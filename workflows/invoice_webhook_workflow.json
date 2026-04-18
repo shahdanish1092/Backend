@@ -1,0 +1,354 @@
+{
+  "name": "Invoice Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-process",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {
+          "responseMessage": "Invoice processing started"
+        }
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "invoice-process-uuid"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "request_id",
+              "value": "={{ $json.body.request_id }}"
+            },
+            {
+              "name": "callback_url",
+              "value": "={{ $json.body.callback_url }}"
+            },
+            {
+              "name": "n8n_callback_secret",
+              "value": "={{ $json.body.n8n_callback_secret }}"
+            },
+            {
+              "name": "user_email",
+              "value": "={{ $json.body.payload.user_email }}"
+            },
+            {
+              "name": "google_access_token",
+              "value": "={{ $json.body.payload.google_access_token }}"
+            },
+            {
+              "name": "file_base64",
+              "value": "={{ $json.body.payload.file_base64 }}"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.body.payload.filename }}"
+            },
+            {
+              "name": "backend_base_url",
+              "value": "={{ $json.body.backend_base_url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Extract Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.backend_base_url }}/api/document/extract",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content_base64",
+              "value": "={{ $json.file_base64 }}"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.filename }}"
+            },
+            {
+              "name": "mime_type",
+              "value": "application/pdf"
+            },
+            {
+              "name": "request_id",
+              "value": "={{ $json.request_id }}"
+            },
+            {
+              "name": "workflow_type",
+              "value": "invoice"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Extract Invoice Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"max_tokens\": 1000,\n  \"temperature\": 0.1,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an invoice data extraction expert. Extract structured data from invoice text. Return ONLY valid JSON: { \\\"is_invoice\\\": boolean, \\\"vendor_name\\\": string, \\\"invoice_number\\\": string, \\\"invoice_date\\\": string, \\\"due_date\\\": string or null, \\\"total_amount\\\": number, \\\"currency\\\": string, \\\"line_items\\\": [{\\\"description\\\": string, \\\"quantity\\\": number, \\\"unit_price\\\": number, \\\"total\\\": number}], \\\"confidence_score\\\": number }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Extract invoice data from: {{ $('Extract Invoice Text').first().json.extracted_text || 'No text extracted' }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "name": "Analyze with Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = items[0].json;\nlet parsed = {};\ntry {\n  const content = response.choices[0].message.content;\n  parsed = JSON.parse(content);\n} catch(e) {\n  parsed = { \n    is_invoice: false,\n    vendor_name: \"Unknown\",\n    total_amount: 0.0,\n    invoice_number: \"\",\n    confidence_score: 0.0\n  };\n}\n\nconst ctx = $('Extract Context').first().json;\n\nreturn [{\n  json: {\n    extracted_data: parsed,\n    is_invoice: parsed.is_invoice,\n    vendor_name: parsed.vendor_name,\n    total_amount: parsed.total_amount,\n    invoice_number: parsed.invoice_number,\n    invoice_date: parsed.invoice_date,\n    confidence_score: parsed.confidence_score,\n    request_id: ctx.request_id,\n    user_email: ctx.user_email,\n    google_access_token: ctx.google_access_token\n  }\n}];"
+      },
+      "name": "Parse Groq Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_invoice }}",
+              "value2": false
+            }
+          ],
+          "number": [
+            {
+              "value1": "={{ $json.confidence_score }}",
+              "operation": "smaller",
+              "value2": 0.7
+            }
+          ]
+        },
+        "combineConditions": "OR"
+      },
+      "name": "Confidence Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userEmail = $('Extract Context').first().json.user_email;\nconst email = [\n  'To: ' + userEmail,\n  'Subject: Invoice Verification Required',\n  'Content-Type: text/plain',\n  '',\n  'Please verify this invoice. AI confidence was low or document was not recognized as an invoice.'\n].join('\\n');\nconst encoded = Buffer.from(email).toString('base64url');\nreturn [{ json: { raw: encoded } }];"
+      },
+      "name": "Build Approval Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Extract Context').first().json.google_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"raw\": \"{{ $json.raw }}\"\n}",
+        "options": {}
+      },
+      "name": "Send Approval Email via Gmail API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Extract Context').first().json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-Callback-Secret",
+              "value": "={{ $('Extract Context').first().json.n8n_callback_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"request_id\": \"{{ $('Extract Context').first().json.request_id }}\",\n  \"workflow_type\": \"invoice\",\n  \"status\": \"completed\",\n  \"data\": {\n    \"vendor_name\": \"{{ $('Parse Groq Response').first().json.vendor_name }}\",\n    \"invoice_number\": \"{{ $('Parse Groq Response').first().json.invoice_number }}\",\n    \"total_amount\": {{ $('Parse Groq Response').first().json.total_amount || 0 }},\n    \"invoice_date\": \"{{ $('Parse Groq Response').first().json.invoice_date }}\",\n    \"line_items\": {{ JSON.stringify($('Parse Groq Response').first().json.extracted_data?.line_items || []) }},\n    \"confidence_score\": {{ $('Parse Groq Response').first().json.confidence_score || 0 }},\n    \"human_verified\": false\n  },\n  \"metadata\": {\n    \"user_email\": \"{{ $('Extract Context').first().json.user_email }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "Send Execution Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Context": {
+      "main": [
+        [
+          {
+            "node": "Extract Invoice Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Invoice Text": {
+      "main": [
+        [
+          {
+            "node": "Analyze with Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze with Groq": {
+      "main": [
+        [
+          {
+            "node": "Parse Groq Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Groq Response": {
+      "main": [
+        [
+          {
+            "node": "Confidence Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confidence Check": {
+      "main": [
+        [
+          {
+            "node": "Build Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Execution Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Send Approval Email via Gmail API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Approval Email via Gmail API": {
+      "main": [
+        [
+          {
+            "node": "Send Execution Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

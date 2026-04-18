@@ -20,13 +20,13 @@ router = APIRouter()
 def _classify_text_simple(text: str) -> dict[str, Any]:
     t = (text or "").lower()
     if any(k in t for k in ("invoice", "bill", "amount", "vendor")):
-        return {"domain": "invoices", "action": "process_invoice", "parameters": {}}
-    if any(k in t for k in ("resume", "candidate", "cv", "interview", "shortlist", "hire")):
+        return {"domain": "invoice", "action": "process_invoice", "parameters": {}}
+    if any(k in t for k in ("resume", "candidate", "cv", "interview", "shortlist", "hire", "job", "application")):
         return {"domain": "hr", "action": "process_resume", "parameters": {}}
     if any(k in t for k in ("meeting", "summar", "follow[- ]?up", "calendar")):
-        return {"domain": "meetings", "action": "summarize_meeting", "parameters": {}}
+        return {"domain": "meeting", "action": "summarize_meeting", "parameters": {}}
     if any(k in t for k in ("approve", "approval", "sign")):
-        return {"domain": "approvals", "action": "route_for_approval", "parameters": {}}
+        return {"domain": "approval", "action": "route_for_approval", "parameters": {}}
     return {"domain": "general", "action": "none", "parameters": {}}
 
 

@@ -1,0 +1,432 @@
+{
+  "name": "Meeting Summarizer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-summarize",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "meeting-summarize-uuid"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "request_id",
+              "value": "={{ $json.body.request_id }}"
+            },
+            {
+              "name": "callback_url",
+              "value": "={{ $json.body.callback_url }}"
+            },
+            {
+              "name": "n8n_callback_secret",
+              "value": "={{ $json.body.n8n_callback_secret }}"
+            },
+            {
+              "name": "user_email",
+              "value": "={{ $json.body.payload.user_email }}"
+            },
+            {
+              "name": "google_access_token",
+              "value": "={{ $json.body.payload.google_access_token }}"
+            },
+            {
+              "name": "backend_base_url",
+              "value": "={{ $json.body.backend_base_url }}"
+            },
+            {
+              "name": "content_type",
+              "value": "={{ $json.body.payload.type }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $json.body.payload.content }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $json.body.payload.title }}"
+            }
+          ],
+          "number": [],
+          "boolean": []
+        },
+        "options": {}
+      },
+      "name": "Extract Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const attendees = $('Webhook').first().json.body?.payload?.attendees || [];\nitems[0].json.attendees = attendees;\nreturn items;"
+      },
+      "name": "Extract Attendees",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.content_type }}",
+              "value2": "audio"
+            }
+          ]
+        }
+      },
+      "name": "Content Type Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "items[0].binary = {\n  data: {\n    data: items[0].json.content,\n    mimeType: 'audio/mpeg',\n    fileName: 'audio.mp3'\n  }\n};\nreturn items;"
+      },
+      "name": "Convert B64 to Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Transcribe Audio via Groq Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Extract Context').first().json;\nconst attendees = $('Extract Attendees').first().json.attendees;\n\nlet transcript_text = \"\";\nif (ctx.content_type === \"audio\") {\n  transcript_text = $('Transcribe Audio via Groq Whisper').first().json.text;\n} else {\n  transcript_text = ctx.content;\n}\n\nreturn [{\n  json: {\n    transcript_text: transcript_text,\n    title: ctx.title,\n    attendees: attendees,\n    request_id: ctx.request_id,\n    user_email: ctx.user_email\n  }\n}];"
+      },
+      "name": "Merge Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1550,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"response_format\": { \"type\": \"json_object\" },\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an expert meeting summarizer. Analyze the transcript and return ONLY valid JSON: { \\\"executive_summary\\\": string, \\\"key_decisions\\\": [string], \\\"action_items\\\": [{\\\"task\\\": string, \\\"owner\\\": string, \\\"due_date\\\": string or null}], \\\"follow_up_topics\\\": [string], \\\"sentiment\\\": \\\"positive|neutral|negative\\\" }\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Summarize this meeting transcript:\\nTitle: {{ $json.title }}\\nAttendees: {{ $json.attendees }}\\nTranscript: {{ $json.transcript_text }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "name": "Summarize with Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $('Summarize with Groq').first();\nlet parsed = {};\ntry {\n  parsed = JSON.parse(summary.json.choices[0].message.content);\n} catch(e) { }\n\n// We only calendar invite if there are action items.\nitems[0].json.has_action_items = !!(parsed.action_items && parsed.action_items.length > 0);\nitems[0].json.parsed_summary = parsed;\nreturn items;"
+      },
+      "name": "Check Action Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_action_items }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Action Items IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Extract Context').first().json.google_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"summary\": \"Follow-up: {{ $('Merge Transcript').first().json.title }}\",\n  \"description\": \"Action items from previous meeting:\\n\" + {{ JSON.stringify($json.parsed_summary.action_items) }},\n  \"start\": {\n    \"dateTime\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }}\"\n  },\n  \"end\": {\n    \"dateTime\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 3600000).toISOString() }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "Create Calendar Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Extract Context').first().json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-Callback-Secret",
+              "value": "={{ $('Extract Context').first().json.n8n_callback_secret }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"request_id\": \"{{ $('Extract Context').first().json.request_id }}\",\n  \"workflow_type\": \"meeting\",\n  \"status\": \"completed\",\n  \"data\": {\n    \"summary\": {{ JSON.stringify($('Check Action Items').first().json.parsed_summary) }},\n    \"title\": \"{{ $('Extract Context').first().json.title }}\",\n    \"transcript_length\": {{ $('Merge Transcript').first().json.transcript_text?.length || 0 }}\n  },\n  \"metadata\": {\n    \"user_email\": \"{{ $('Extract Context').first().json.user_email }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "Send Execution Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Context": {
+      "main": [
+        [
+          {
+            "node": "Extract Attendees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Attendees": {
+      "main": [
+        [
+          {
+            "node": "Content Type Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Type Check": {
+      "main": [
+        [
+          {
+            "node": "Convert B64 to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert B64 to Binary": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Audio via Groq Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Audio via Groq Whisper": {
+      "main": [
+        [
+          {
+            "node": "Merge Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Transcript": {
+      "main": [
+        [
+          {
+            "node": "Summarize with Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize with Groq": {
+      "main": [
+        [
+          {
+            "node": "Check Action Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Action Items": {
+      "main": [
+        [
+          {
+            "node": "Action Items IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Items IF": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Execution Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Send Execution Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
