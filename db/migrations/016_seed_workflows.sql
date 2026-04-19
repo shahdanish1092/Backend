@@ -1,30 +1,29 @@
--- Seed standard workflow records
+-- Migration: seed invoice and meeting workflows
+BEGIN;
 
-INSERT INTO workflows (name, n8n_id, n8n_webhook_url, domain, status)
+INSERT INTO workflows (name, n8n_id, n8n_webhook_url, domain, status, active)
 VALUES 
-  (
-    'HR Recruitment Executor',
-    'V1v6fXo7jskZjvif',
-    'https://n8n-production-8c140.up.railway.app/webhook/execute-workflow',
-    'hr',
-    'active'
-  ),
   (
     'Invoice Processor',
     'uZLgL9y2HZtyKdjM',
     'https://n8n-production-8c140.up.railway.app/webhook/invoice-webhook-v2',
     'invoice',
-    'active'
+    'active',
+    true
   ),
   (
     'Meeting Summarizer',
     'IKw6v1FpCLV3zni5',
     'https://n8n-production-8c140.up.railway.app/webhook/meeting-webhook-v2',
     'meeting',
-    'active'
+    'active',
+    true
   )
 ON CONFLICT (n8n_id) DO UPDATE SET
-  n8n_webhook_url = EXCLUDED.n8n_webhook_url,
-  status = EXCLUDED.status,
   name = EXCLUDED.name,
-  domain = EXCLUDED.domain;
+  n8n_webhook_url = EXCLUDED.n8n_webhook_url,
+  domain = EXCLUDED.domain,
+  status = EXCLUDED.status,
+  active = EXCLUDED.active;
+
+COMMIT;
