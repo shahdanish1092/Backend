@@ -6,7 +6,7 @@ import os
 
 load_dotenv()
 
-from routers import auth, dashboard, invoices, hr, meetings, approvals, admin, internal, hr_execute, chat, connectors
+from routers import auth, dashboard, invoices, hr, meetings, approvals, admin, internal, hr_execute, chat, connectors, executions
 
 
 logging.basicConfig(
@@ -37,6 +37,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
+app.include_router(executions.router, prefix="/api", tags=["executions"])
 app.include_router(invoices.router, prefix="/api", tags=["invoices"])
 app.include_router(hr.router, prefix="/api", tags=["hr"])
 app.include_router(hr_execute.router, prefix="/api", tags=["hr_execute"])

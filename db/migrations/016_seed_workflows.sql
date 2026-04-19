@@ -5,7 +5,7 @@ INSERT INTO workflows (name, n8n_id, n8n_webhook_url, domain, status, active)
 VALUES 
   (
     'Invoice Processor',
-    'uZLgL9y2HZtyKdjM',
+    '7GVaSgIqOVLT0vs5',
     'https://n8n-production-8c140.up.railway.app/webhook/invoice-webhook-v2',
     'invoice',
     'active',

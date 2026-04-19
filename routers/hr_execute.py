@@ -153,7 +153,7 @@ def _attempt_groq_rank(extracted_text: str, criteria: str):
                 client = groq.Client()
                 if hasattr(client, "chat") and hasattr(client.chat, "completions"):
                     response = client.chat.completions.create(
-                        model="llama3-70b-8192",
+                        model="llama3-8b-8192",
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": extracted_text},
@@ -467,8 +467,13 @@ async def execution_callback(request: Request):
     else:
         status = status_raw
 
-    # Format A -> results, Format B -> data. Also check error.
-    result_data = payload.get("results") if "results" in payload else payload.get("data")
+    # Format A -> results, B -> data, C -> result (n8n HTTP callback)
+    if "results" in payload:
+        result_data = payload.get("results")
+    elif "result" in payload:
+        result_data = payload.get("result")
+    else:
+        result_data = payload.get("data")
     error_msg = payload.get("error")
     
     conn = get_db_connection()

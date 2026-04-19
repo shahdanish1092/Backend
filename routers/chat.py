@@ -189,55 +189,6 @@ async def post_message(payload: dict, x_user_email: str | None = Header(None)):
         conn.close()
 
 
-@router.get("/executions/{execution_id}")
-async def get_execution(execution_id: str, x_user_email: str | None = Header(None)):
-    conn = get_db_connection()
-    try:
-        normalized_email = require_user_header(conn, x_user_email, require_known_user=True)
-
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT 
-                    e.id::text, 
-                    e.status, 
-                    e.module as domain, 
-                    e.created_at as started_at, 
-                    e.completed_at, 
-                    e.result_payload, 
-                    e.error_message, 
-                    w.name as workflow_name,
-                    e.user_email
-                FROM execution_logs e
-                LEFT JOIN workflows w ON e.module = w.domain AND w.status = 'active'
-                WHERE e.id = %s
-                ORDER BY w.updated_at DESC
-                LIMIT 1
-                """,
-                (execution_id,)
-            )
-            row = cur.fetchone()
-            
-        if not row:
-            raise HTTPException(status_code=404, detail="Execution not found")
-            
-        if row[8].strip().lower() != normalized_email:
-            raise HTTPException(status_code=403, detail="Forbidden")
-            
-        return {
-            "id": row[0],
-            "status": row[1],
-            "domain": row[2],
-            "started_at": row[3].isoformat() if row[3] else None,
-            "completed_at": row[4].isoformat() if row[4] else None,
-            "result_payload": row[5],
-            "error_message": row[6],
-            "workflow_name": row[7]
-        }
-    finally:
-        conn.close()
-
-
 @router.get("/executions")
 async def list_executions(x_user_email: str | None = Header(None), status: str | None = None, limit: int = 20):
     limit = min(limit, 100)

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from main import app
 import routers.chat as chat_module
+import routers.executions as executions_module
 import routers.internal as internal_module
 
 
@@ -66,11 +67,11 @@ def test_get_execution_404(monkeypatch):
         def close(self):
             return None
 
-    monkeypatch.setattr(chat_module, "get_db_connection", lambda: DummyConn())
+    monkeypatch.setattr(executions_module, "get_db_connection", lambda: DummyConn())
 
     client = TestClient(app)
     r = client.get("/api/executions/nonexistent", headers={"X-User-Email": "a@b.com"})
-    assert r.status_code == 403
+    assert r.status_code == 404
 
 
 def test_get_execution_forbidden(monkeypatch):
@@ -92,7 +93,6 @@ def test_get_execution_forbidden(monkeypatch):
                         None,
                         None,
                         None,
-                        "Workflow",
                         "owner@example.com",
                     )
 
@@ -104,7 +104,7 @@ def test_get_execution_forbidden(monkeypatch):
         def close(self):
             return None
 
-    monkeypatch.setattr(chat_module, "get_db_connection", lambda: DummyConn())
+    monkeypatch.setattr(executions_module, "get_db_connection", lambda: DummyConn())
 
     client = TestClient(app)
     r = client.get("/api/executions/1", headers={"X-User-Email": "other@example.com"})

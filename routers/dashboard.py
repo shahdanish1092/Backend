@@ -100,11 +100,9 @@ async def user_status(user_email: str):
 
     return {
         "user_email": user_email,
-        "metrics": {
-            "invoices_processed": invoices_processed,
-            "meetings_summarized": meetings_summarized,
-            "pending_approvals": pending_approvals,
-            "system_status": system_status
-        },
-        "recent_activity": recent_activity
+        "invoices_processed": invoices_processed,
+        "meetings_summarized": meetings_summarized,
+        "pending_approvals": pending_approvals,
+        "system_status": system_status,
+        "recent_activity": recent_activity,
     }

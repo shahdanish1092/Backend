@@ -11,12 +11,12 @@ from orchestration import build_n8n_webhook_headers
 
 router = APIRouter()
 
-@router.post("/webhooks/invoice/trigger")
-async def trigger_invoice_webhook(
+
+async def _trigger_invoice_webhook(
     request: Request,
     user_email: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
-    filename: Optional[str] = Form(None)
+    filename: Optional[str] = Form(None),
 ):
     # Support both JSON and Multipart Form
     content_type = request.headers.get("content-type", "")
@@ -96,6 +96,28 @@ async def trigger_invoice_webhook(
         raise HTTPException(status_code=502, detail=f"n8n webhook failed: {e}")
     finally:
         conn.close()
+
+
+@router.post("/webhooks/invoice/trigger")
+async def trigger_invoice_webhook(
+    request: Request,
+    user_email: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    filename: Optional[str] = Form(None),
+):
+    return await _trigger_invoice_webhook(request, user_email, file, filename)
+
+
+@router.post("/webhooks/invoice")
+async def trigger_invoice_webhook_alias(
+    request: Request,
+    user_email: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    filename: Optional[str] = Form(None),
+):
+    """Alias for frontend `POST /webhooks/invoice` (same behavior as `/webhooks/invoice/trigger`)."""
+    return await _trigger_invoice_webhook(request, user_email, file, filename)
+
 
 @router.get("/invoices/{user_email}")
 async def get_invoices(user_email: str):
