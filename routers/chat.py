@@ -3,14 +3,12 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Header
+import httpx
 
+from auth.guards import require_user_header
 from database import get_db_connection
 from orchestration import (
-    create_execution_log,
-    merge_execution_log_output_summary,
-    get_execution_log,
-    build_n8n_api_headers,
-    trigger_n8n_workflow,
+    build_n8n_webhook_headers,
 )
 
 
@@ -85,7 +83,7 @@ async def _classify_text(text: str) -> dict[str, Any]:
 
 
 @router.post("/chat/message")
-async def post_message(payload: dict):
+async def post_message(payload: dict, x_user_email: str | None = Header(None)):
     # required fields
     if not payload.get("text") or not isinstance(payload.get("active_connectors", []), list) or not payload.get("user_email"):
         raise HTTPException(status_code=400, detail="Missing required fields: text, active_connectors, user_email")
@@ -94,13 +92,15 @@ async def post_message(payload: dict):
     active_connectors = payload.get("active_connectors")
     user_email = payload.get("user_email")
 
-    classification = await _classify_text(text)
-    domain = classification.get("domain", "general")
-    action = classification.get("action", "none")
-    parameters = classification.get("parameters", {})
-
     conn = get_db_connection()
     try:
+        require_user_header(conn, x_user_email, claimed_user_email=user_email, require_known_user=True)
+
+        classification = await _classify_text(text)
+        domain = classification.get("domain", "general")
+        action = classification.get("action", "none")
+        parameters = classification.get("parameters", {})
+
         # Step 2: find a workflow
         with conn.cursor() as cur:
             cur.execute(
@@ -151,23 +151,13 @@ async def post_message(payload: dict):
         conn.commit()
 
         # Step 6: POST to webhook
-        import httpx
-        import base64
-        
         # Use provided URL or fallback to env variable if null
         webhook_url = n8n_webhook_url
         if not webhook_url:
             webhook_base = os.getenv("N8N_WEBHOOK_BASE_URL", os.getenv("N8N_BASE_URL", "http://localhost:5678")).rstrip("/")
             webhook_url = f"{webhook_base}/webhook/execute-workflow"
-            
-        auth_user = os.getenv("N8N_BASIC_AUTH_USER", "")
-        auth_pass = os.getenv("N8N_BASIC_AUTH_PASSWORD", "")
-        basic_auth_b64 = base64.b64encode(f"{auth_user}:{auth_pass}".encode()).decode()
-        
-        headers = {
-            "Authorization": f"Basic {basic_auth_b64}",
-            "Content-Type": "application/json"
-        }
+
+        headers = build_n8n_webhook_headers()
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -201,11 +191,10 @@ async def post_message(payload: dict):
 
 @router.get("/executions/{execution_id}")
 async def get_execution(execution_id: str, x_user_email: str | None = Header(None)):
-    if not x_user_email:
-        raise HTTPException(status_code=400, detail="Missing X-User-Email header")
-
     conn = get_db_connection()
     try:
+        normalized_email = require_user_header(conn, x_user_email, require_known_user=True)
+
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -232,7 +221,7 @@ async def get_execution(execution_id: str, x_user_email: str | None = Header(Non
         if not row:
             raise HTTPException(status_code=404, detail="Execution not found")
             
-        if row[8] != x_user_email:
+        if row[8].strip().lower() != normalized_email:
             raise HTTPException(status_code=403, detail="Forbidden")
             
         return {
@@ -251,12 +240,11 @@ async def get_execution(execution_id: str, x_user_email: str | None = Header(Non
 
 @router.get("/executions")
 async def list_executions(x_user_email: str | None = Header(None), status: str | None = None, limit: int = 20):
-    if not x_user_email:
-        raise HTTPException(status_code=400, detail="Missing X-User-Email header")
-        
     limit = min(limit, 100)
     conn = get_db_connection()
     try:
+        normalized_email = require_user_header(conn, x_user_email, require_known_user=True)
+
         query = """
             SELECT 
                 e.id::text, 
@@ -271,7 +259,7 @@ async def list_executions(x_user_email: str | None = Header(None), status: str |
             LEFT JOIN workflows w ON e.module = w.domain AND w.status = 'active'
             WHERE e.user_email = %s
         """
-        params = [x_user_email]
+        params = [normalized_email]
         
         if status:
             query += " AND e.status = %s"

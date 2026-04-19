@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Header
 from database import get_db_connection
 from orchestration import (
     build_n8n_api_headers,
+    build_n8n_webhook_headers,
     create_execution_log,
     get_n8n_executions_for_request,
     get_execution_log,
@@ -13,6 +14,7 @@ from orchestration import (
     merge_execution_log_output_summary,
     ping_n8n_health,
     post_with_retry,
+    resolve_workflow_webhook_url,
     upsert_execution_log,
     update_execution_log,
     update_execution_status,
@@ -221,7 +223,12 @@ async def internal_triage(payload: dict):
 
         if cat == "recruitment":
             workflow = "hr_recruitment"
-            n8n_url = os.getenv("N8N_HR_WEBHOOK_URL")
+            n8n_url = os.getenv("N8N_HR_WEBHOOK_URL") or resolve_workflow_webhook_url(
+                conn,
+                "hr",
+                preferred_name_substring="executor",
+                default_path="execute-workflow",
+            )
             if not n8n_url:
                 error_message = "N8N_HR_WEBHOOK_URL not configured"
                 update_execution_log(
@@ -253,7 +260,7 @@ async def internal_triage(payload: dict):
                 response = await post_with_retry(
                     n8n_url,
                     json_body=body,
-                    headers=build_n8n_api_headers(),
+                    headers=build_n8n_webhook_headers(),
                     timeout=15.0,
                     attempts=3,
                 )

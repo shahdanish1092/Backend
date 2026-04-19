@@ -9,6 +9,24 @@ class DummyConnection:
         return None
 
 
+class DummyAsyncClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, *args, **kwargs):
+        class Resp:
+            def raise_for_status(self_inner):
+                return None
+
+            def json(self_inner):
+                return {"id": "evt_123", "htmlLink": "https://calendar.example/event"}
+
+        return Resp()
+
+
 def test_rank_candidates_returns_array_when_groq_fails(monkeypatch):
     client = TestClient(app)
 
@@ -68,6 +86,8 @@ def test_send_email_acknowledges(monkeypatch):
     client = TestClient(app)
 
     monkeypatch.setattr(hr_execute, "_reuse_or_create_request", lambda *args, **kwargs: "00000000-0000-0000-0000-000000000333")
+    monkeypatch.setattr(hr_execute, "get_valid_google_token", lambda user_email: ("token", None))
+    monkeypatch.setattr(hr_execute.httpx, "AsyncClient", DummyAsyncClient)
 
     response = client.post(
         "/api/send-email",
@@ -78,6 +98,7 @@ def test_send_email_acknowledges(monkeypatch):
             "subject": "Interview",
             "body": "Hello",
             "step_id": "send_emails",
+            "user_email": "owner@example.com"
         },
     )
 
@@ -93,6 +114,8 @@ def test_create_calendar_event_acknowledges(monkeypatch):
     client = TestClient(app)
 
     monkeypatch.setattr(hr_execute, "_reuse_or_create_request", lambda *args, **kwargs: "00000000-0000-0000-0000-000000000444")
+    monkeypatch.setattr(hr_execute, "get_valid_google_token", lambda user_email: ("token", None))
+    monkeypatch.setattr(hr_execute.httpx, "AsyncClient", DummyAsyncClient)
 
     response = client.post(
         "/api/create-calendar-event",
@@ -103,14 +126,16 @@ def test_create_calendar_event_acknowledges(monkeypatch):
             "start_time": "2026-04-12T10:00:00Z",
             "end_time": "2026-04-12T10:30:00Z",
             "step_id": "schedule_interviews",
+            "user_email": "owner@example.com"
         },
     )
 
     assert response.status_code == 200
     assert response.json() == {
-        "status": "ok",
+        "status": "completed",
         "step_id": "schedule_interviews",
-        "event_id": "evt_00000000",
+        "event_id": "evt_123",
+        "calendar_link": "https://calendar.example/event",
         "start_time": "2026-04-12T10:00:00Z",
         "end_time": "2026-04-12T10:30:00Z",
         "request_id": "00000000-0000-0000-0000-000000000444",

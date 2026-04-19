@@ -215,6 +215,104 @@ def build_n8n_api_headers() -> dict[str, str]:
     return headers
 
 
+def build_n8n_webhook_headers() -> dict[str, str]:
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+
+    backend_secret = os.getenv("BACKEND_WEBHOOK_SECRET") or os.getenv("N8N_CALLBACK_SECRET")
+    if backend_secret:
+        headers["X-Backend-Secret"] = backend_secret
+
+    auth_user = os.getenv("N8N_BASIC_AUTH_USER")
+    auth_pass = os.getenv("N8N_BASIC_AUTH_PASSWORD")
+    if auth_user and auth_pass:
+        basic_auth_b64 = base64.b64encode(f"{auth_user}:{auth_pass}".encode()).decode()
+        headers["Authorization"] = f"Basic {basic_auth_b64}"
+
+    return headers
+
+
+def resolve_workflow_webhook_url(
+    conn,
+    domain: str,
+    *,
+    preferred_name_substring: str | None = None,
+    default_path: str | None = None,
+) -> str | None:
+    order_case = ""
+    params: list[Any] = [domain]
+    if preferred_name_substring:
+        order_case = "CASE WHEN lower(name) LIKE %s THEN 0 ELSE 1 END,"
+        params.append(f"%{preferred_name_substring.lower()}%")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT n8n_webhook_url
+            FROM workflows
+            WHERE domain = %s
+              AND status = 'active'
+              AND coalesce(n8n_webhook_url, '') <> ''
+            ORDER BY {order_case} updated_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            tuple(params),
+        )
+        row = cur.fetchone()
+    if row and row[0]:
+        return row[0]
+
+    webhook_base = os.getenv("N8N_WEBHOOK_BASE_URL") or os.getenv("N8N_BASE_URL")
+    if webhook_base and default_path:
+        return f"{webhook_base.rstrip('/')}/webhook/{default_path.lstrip('/')}"
+    return None
+
+
+def get_valid_google_token(user_email: str) -> tuple[str, Any]:
+    from auth.google_oauth import refresh_token_if_needed
+    from database import get_db_connection
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT access_token, refresh_token, token_expiry FROM google_tokens WHERE user_email = %s",
+                (user_email,),
+            )
+            token_row = cur.fetchone()
+
+        if not token_row:
+            raise RuntimeError("User has not connected Google account")
+
+        access_token, refresh_token, token_expiry = token_row
+        creds = refresh_token_if_needed(access_token, refresh_token)
+        next_access_token = creds.token or access_token
+        next_refresh_token = creds.refresh_token or refresh_token
+        next_expiry = creds.expiry or token_expiry
+
+        if (
+            next_access_token != access_token
+            or next_refresh_token != refresh_token
+            or next_expiry != token_expiry
+        ):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE google_tokens
+                    SET access_token = %s,
+                        refresh_token = %s,
+                        token_expiry = %s,
+                        updated_at = now()
+                    WHERE user_email = %s
+                    """,
+                    (next_access_token, next_refresh_token, next_expiry, user_email),
+                )
+            conn.commit()
+
+        return next_access_token, next_expiry
+    finally:
+        conn.close()
+
+
 async def post_with_retry(
     url: str,
     *,
@@ -315,7 +413,7 @@ async def trigger_n8n_via_webhook(workflow_id: str, payload: dict[str, Any], exe
     """Trigger a workflow run by calling the workflow's Webhook trigger.
 
     Uses N8N_WEBHOOK_BASE_URL and N8N_WEBHOOK_PATH (or falls back to a sensible default).
-    Webhook calls do NOT include `X-N8N-API-KEY` — the webhook URL is the auth.
+    Webhook calls include the shared backend secret header validated inside n8n.
     Returns a dict describing the response.
     """
     webhook_base = os.getenv("N8N_WEBHOOK_BASE_URL") or os.getenv("N8N_BASE_URL")
@@ -348,8 +446,7 @@ async def trigger_n8n_via_webhook(workflow_id: str, payload: dict[str, Any], exe
             if k in payload:
                 body[k] = payload[k]
 
-    # Webhooks don't require API key header
-    headers: dict[str, str] = {"Content-Type": "application/json"}
+    headers = build_n8n_webhook_headers()
     resp = await post_with_retry(url, json_body=body, headers=headers, timeout=20.0, attempts=3)
     try:
         return {"method": "webhook", "status_code": resp.status_code, "json": resp.json()}

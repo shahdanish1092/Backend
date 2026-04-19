@@ -13,12 +13,14 @@ from pydantic import BaseModel, Field
 
 from database import get_db_connection
 from orchestration import (
-    build_n8n_api_headers,
+    build_n8n_webhook_headers,
     create_execution_log,
     get_execution_log,
+    get_valid_google_token,
     log_exception,
     merge_execution_log_output_summary,
     post_with_retry,
+    resolve_workflow_webhook_url,
     update_execution_log,
     upsert_execution_log,
 )
@@ -84,6 +86,7 @@ class HRExecuteRequest(BaseModel):
 class SendEmailRequest(BaseModel):
     request_id: UUID
     candidate_email: str = ""
+    to: str = ""
     candidate_name: str = ""
     subject: str = ""
     body: str = ""
@@ -519,7 +522,12 @@ async def hr_execute(req: HRExecuteRequest):
             status="created",
         )
 
-        n8n_url = os.getenv("N8N_HR_WEBHOOK_URL")
+        n8n_url = os.getenv("N8N_HR_WEBHOOK_URL") or resolve_workflow_webhook_url(
+            conn,
+            "hr",
+            preferred_name_substring="executor",
+            default_path="execute-workflow",
+        )
         if not n8n_url:
             error_message = "N8N_HR_WEBHOOK_URL not configured"
             update_execution_log(
@@ -566,7 +574,7 @@ async def hr_execute(req: HRExecuteRequest):
             response = await post_with_retry(
                 n8n_url,
                 json_body=body,
-                headers=build_n8n_api_headers(),
+                headers=build_n8n_webhook_headers(),
                 timeout=15.0,
                 attempts=3,
             )
@@ -604,51 +612,29 @@ async def hr_execute(req: HRExecuteRequest):
     finally:
         conn.close()
 
-
-from auth.google_oauth import refresh_token_if_needed
-
 @router.post("/send-email")
 async def send_email(req: SendEmailRequest):
     payload = req.model_dump()
     user_email = req.user_email
+    recipient_email = req.candidate_email or req.to
     
     if not user_email:
         raise HTTPException(status_code=400, detail="Missing user_email for sending email")
 
-    if not req.candidate_email:
+    if not recipient_email:
         # Gracefully skip if no email provided (common in mock tests)
         request_id = _reuse_or_create_request(str(req.request_id), req.user_email, "send_emails", payload, "shortlisted")
         return {"status": "skipped", "message": "No candidate email provided", "request_id": request_id}
-        
-    conn = get_db_connection()
+
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT access_token, refresh_token FROM google_tokens WHERE user_email = %s", (user_email,))
-            token_row = cur.fetchone()
-            
-        if not token_row:
-            raise HTTPException(status_code=400, detail="User has not connected Google account")
-            
-        access_token, refresh_token = token_row[0], token_row[1]
-        
-        # Refresh tokens
-        creds = refresh_token_if_needed(access_token, refresh_token)
-        
-        # Update DB if token was refreshed
-        if creds.token != access_token:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE google_tokens SET access_token = %s WHERE user_email = %s",
-                    (creds.token, user_email)
-                )
-            conn.commit()
+        access_token, _ = get_valid_google_token(user_email)
 
         # Build email
         from email.message import EmailMessage
         import base64
         msg = EmailMessage()
         msg.set_content(req.body)
-        msg['To'] = req.candidate_email
+        msg['To'] = recipient_email
         msg['From'] = user_email
         msg['Subject'] = req.subject
         raw_msg = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
@@ -656,7 +642,7 @@ async def send_email(req: SendEmailRequest):
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-                headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
                 json={"raw": raw_msg}
             )
             resp.raise_for_status()
@@ -666,8 +652,6 @@ async def send_email(req: SendEmailRequest):
     except Exception as exc:
         log_exception("Failed to send email via Google API", request_id=str(req.request_id), error=str(exc))
         raise HTTPException(status_code=502, detail=f"Failed to send email: {exc}")
-    finally:
-        conn.close()
 
     request_id = _reuse_or_create_request(str(req.request_id), req.user_email, "send_emails", payload, "shortlisted")
     return {"status": "ok", "step_id": "send_emails", "request_id": request_id}
@@ -681,29 +665,10 @@ async def create_calendar_event(req: CreateCalendarEventRequest):
     if not user_email:
         raise HTTPException(status_code=400, detail="Missing user_email for Google Calendar")
         
-    conn = get_db_connection()
     event_id = f"evt_{str(req.request_id)[:8]}"
     calendar_link = ""
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT access_token, refresh_token FROM google_tokens WHERE user_email = %s", (user_email,))
-            token_row = cur.fetchone()
-            
-        if not token_row:
-            raise HTTPException(status_code=400, detail="User has not connected Google account")
-            
-        access_token, refresh_token = token_row[0], token_row[1]
-        
-        # Refresh tokens
-        creds = refresh_token_if_needed(access_token, refresh_token)
-        
-        if creds.token != access_token:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE google_tokens SET access_token = %s WHERE user_email = %s",
-                    (creds.token, user_email)
-                )
-            conn.commit()
+        access_token, _ = get_valid_google_token(user_email)
 
         # Build calendar event
         event_body = {
@@ -719,7 +684,7 @@ async def create_calendar_event(req: CreateCalendarEventRequest):
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-                headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
                 json=event_body
             )
             resp.raise_for_status()
@@ -732,8 +697,6 @@ async def create_calendar_event(req: CreateCalendarEventRequest):
     except Exception as exc:
         log_exception("Failed to create Google Calendar event", request_id=str(req.request_id), error=str(exc))
         raise HTTPException(status_code=502, detail=f"Failed to create calendar event: {exc}")
-    finally:
-        conn.close()
 
     request_id = _reuse_or_create_request(str(req.request_id), req.user_email, "schedule_interviews", payload, "shortlisted")
     return {

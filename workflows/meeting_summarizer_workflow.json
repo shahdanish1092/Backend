@@ -5,8 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "meeting-summarize",
-        "responseMode": "onReceived",
-        "responseCode": 200,
+        "responseMode": "responseNode",
         "options": {}
       },
       "name": "Webhook",
@@ -17,6 +16,41 @@
         300
       ],
       "webhookId": "meeting-summarize-uuid"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.headers['x-backend-secret'] || '' }}",
+              "value2": "={{ $json.body.n8n_callback_secret || '' }}"
+            }
+          ]
+        }
+      },
+      "name": "Validate Backend Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'forbidden', message: 'Invalid backend secret' }) }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "name": "Reject Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        750,
+        500
+      ]
     },
     {
       "parameters": {
@@ -40,10 +74,6 @@
               "value": "={{ $json.body.payload.user_email }}"
             },
             {
-              "name": "google_access_token",
-              "value": "={{ $json.body.payload.google_access_token }}"
-            },
-            {
               "name": "backend_base_url",
               "value": "={{ $json.body.backend_base_url }}"
             },
@@ -59,9 +89,7 @@
               "name": "title",
               "value": "={{ $json.body.payload.title }}"
             }
-          ],
-          "number": [],
-          "boolean": []
+          ]
         },
         "options": {}
       },
@@ -69,7 +97,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 1,
       "position": [
-        500,
+        750,
         300
       ]
     },
@@ -81,7 +109,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        700,
+        1000,
         300
       ]
     },
@@ -100,7 +128,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        900,
+        1250,
         300
       ]
     },
@@ -112,8 +140,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        1100,
-        200
+        1500,
+        180
       ]
     },
     {
@@ -150,19 +178,19 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        1300,
-        200
+        1750,
+        180
       ]
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $('Extract Context').first().json;\nconst attendees = $('Extract Attendees').first().json.attendees;\n\nlet transcript_text = \"\";\nif (ctx.content_type === \"audio\") {\n  transcript_text = $('Transcribe Audio via Groq Whisper').first().json.text;\n} else {\n  transcript_text = ctx.content;\n}\n\nreturn [{\n  json: {\n    transcript_text: transcript_text,\n    title: ctx.title,\n    attendees: attendees,\n    request_id: ctx.request_id,\n    user_email: ctx.user_email\n  }\n}];"
+        "jsCode": "const ctx = $('Extract Context').first().json;\nconst attendees = $('Extract Attendees').first().json.attendees;\n\nlet transcript_text = '';\nif (ctx.content_type === 'audio') {\n  transcript_text = $('Transcribe Audio via Groq Whisper').first().json.text;\n} else {\n  transcript_text = ctx.content;\n}\n\nreturn [{\n  json: {\n    transcript_text,\n    title: ctx.title,\n    attendees,\n    request_id: ctx.request_id,\n    user_email: ctx.user_email,\n    backend_base_url: ctx.backend_base_url,\n  },\n}];"
       },
       "name": "Merge Transcript",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        1550,
+        2000,
         300
       ]
     },
@@ -192,19 +220,19 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        1800,
+        2250,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const summary = $('Summarize with Groq').first();\nlet parsed = {};\ntry {\n  parsed = JSON.parse(summary.json.choices[0].message.content);\n} catch(e) { }\n\n// We only calendar invite if there are action items.\nitems[0].json.has_action_items = !!(parsed.action_items && parsed.action_items.length > 0);\nitems[0].json.parsed_summary = parsed;\nreturn items;"
+        "jsCode": "const summary = $('Summarize with Groq').first();\nlet parsed = {};\ntry {\n  parsed = JSON.parse(summary.json.choices[0].message.content);\n} catch (e) {}\n\nitems[0].json.has_action_items = !!(parsed.action_items && parsed.action_items.length > 0);\nitems[0].json.parsed_summary = parsed;\nreturn items;"
       },
       "name": "Check Action Items",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        2000,
+        2500,
         300
       ]
     },
@@ -223,38 +251,25 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        2200,
+        2750,
         300
       ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract Context').first().json.google_access_token }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ $('Extract Context').first().json.backend_base_url + '/api/create-calendar-event' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"summary\": \"Follow-up: {{ $('Merge Transcript').first().json.title }}\",\n  \"description\": \"Action items from previous meeting:\\n\" + {{ JSON.stringify($json.parsed_summary.action_items) }},\n  \"start\": {\n    \"dateTime\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }}\"\n  },\n  \"end\": {\n    \"dateTime\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 3600000).toISOString() }}\"\n  }\n}",
+        "jsonBody": "={\n  \"request_id\": \"{{ $('Extract Context').first().json.request_id }}\",\n  \"candidate_name\": \"{{ $('Merge Transcript').first().json.title || 'Meeting follow-up' }}\",\n  \"candidate_email\": \"\",\n  \"start_time\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() }}\",\n  \"end_time\": \"{{ new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 3600000).toISOString() }}\",\n  \"step_id\": \"schedule_interviews\",\n  \"user_email\": \"{{ $('Extract Context').first().json.user_email }}\",\n  \"metadata\": {\n    \"source\": \"meeting_summarizer\"\n  }\n}",
         "options": {}
       },
-      "name": "Create Calendar Follow-up",
+      "name": "Create Calendar Follow-up via Backend",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        2400,
-        200
+        3000,
+        180
       ]
     },
     {
@@ -283,8 +298,24 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        2500,
-        450
+        3250,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', request_id: $('Extract Context').first().json.request_id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3500,
+        420
       ]
     }
   ],
@@ -293,7 +324,25 @@
       "main": [
         [
           {
+            "node": "Validate Backend Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Backend Secret": {
+      "main": [
+        [
+          {
             "node": "Extract Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Unauthorized",
             "type": "main",
             "index": 0
           }
@@ -399,7 +448,7 @@
       "main": [
         [
           {
-            "node": "Create Calendar Follow-up",
+            "node": "Create Calendar Follow-up via Backend",
             "type": "main",
             "index": 0
           }
@@ -413,11 +462,22 @@
         ]
       ]
     },
-    "Create Calendar Follow-up": {
+    "Create Calendar Follow-up via Backend": {
       "main": [
         [
           {
             "node": "Send Execution Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Execution Callback": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
             "type": "main",
             "index": 0
           }

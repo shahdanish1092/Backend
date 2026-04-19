@@ -14,7 +14,15 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
-app = FastAPI(title="Spatial+ Office Automation API", version="1.0.0")
+docs_enabled = os.getenv("ENABLE_OPENAPI_DOCS", "").strip().lower() in {"1", "true", "yes"}
+
+app = FastAPI(
+    title="Spatial+ Office Automation API",
+    version="1.0.0",
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
+)
 
 app.add_middleware(
     CORSMiddleware,

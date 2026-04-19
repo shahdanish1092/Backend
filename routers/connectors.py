@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Header
 import httpx
 
+from auth.guards import require_user_header
 from database import get_db_connection
 from orchestration import build_n8n_api_headers
 
@@ -16,12 +17,10 @@ CONNECTOR_TYPES = ["gmail", "google_drive", "google_calendar", "google_sheets", 
 @router.get("")
 async def list_connectors(user_email: str | None = None, x_user_email: str | None = Header(None)):
     """Return available connector types and whether connected for a user."""
-    user_email = user_email or x_user_email
-    if not user_email:
-        raise HTTPException(status_code=400, detail="Missing user_email")
-    
     conn = get_db_connection()
     try:
+        user_email = require_user_header(conn, x_user_email, claimed_user_email=user_email, require_known_user=False)
+
         # Check Google tokens
         with conn.cursor() as cur:
             cur.execute(
@@ -64,7 +63,7 @@ async def list_connectors(user_email: str | None = None, x_user_email: str | Non
 
 
 @router.post("/{connector_type}/connect")
-async def connect_connector(connector_type: str, user_email: str):
+async def connect_connector(connector_type: str, user_email: str, x_user_email: str | None = Header(None)):
     """Initiate connect flow for a connector.
 
     For `gmail` this returns the backend Google OAuth redirect URL (uses existing /api/auth/google).
@@ -73,6 +72,12 @@ async def connect_connector(connector_type: str, user_email: str):
     connector_type = (connector_type or "").lower()
     if connector_type not in CONNECTOR_TYPES:
         raise HTTPException(status_code=400, detail="Unknown connector type")
+
+    conn = get_db_connection()
+    try:
+        require_user_header(conn, x_user_email, claimed_user_email=user_email, require_known_user=False)
+    finally:
+        conn.close()
 
     if connector_type == "gmail":
         frontend = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -84,13 +89,15 @@ async def connect_connector(connector_type: str, user_email: str):
 
 
 @router.delete("/{connector_type}")
-async def delete_connector(connector_type: str, user_email: str):
+async def delete_connector(connector_type: str, user_email: str, x_user_email: str | None = Header(None)):
     connector_type = (connector_type or "").lower()
     if connector_type not in CONNECTOR_TYPES:
         raise HTTPException(status_code=400, detail="Unknown connector type")
 
     conn = get_db_connection()
     try:
+        user_email = require_user_header(conn, x_user_email, claimed_user_email=user_email, require_known_user=False)
+
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, n8n_credential_id FROM connectors WHERE user_email = %s AND connector_type = %s",

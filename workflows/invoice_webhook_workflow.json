@@ -5,11 +5,8 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "invoice-process",
-        "responseMode": "onReceived",
-        "responseCode": 200,
-        "options": {
-          "responseMessage": "Invoice processing started"
-        }
+        "responseMode": "responseNode",
+        "options": {}
       },
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
@@ -19,6 +16,41 @@
         300
       ],
       "webhookId": "invoice-process-uuid"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.headers['x-backend-secret'] || '' }}",
+              "value2": "={{ $json.body.n8n_callback_secret || '' }}"
+            }
+          ]
+        }
+      },
+      "name": "Validate Backend Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'forbidden', message: 'Invalid backend secret' }) }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "name": "Reject Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        750,
+        460
+      ]
     },
     {
       "parameters": {
@@ -42,10 +74,6 @@
               "value": "={{ $json.body.payload.user_email }}"
             },
             {
-              "name": "google_access_token",
-              "value": "={{ $json.body.payload.google_access_token }}"
-            },
-            {
               "name": "file_base64",
               "value": "={{ $json.body.payload.file_base64 }}"
             },
@@ -65,7 +93,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 1,
       "position": [
-        500,
+        750,
         300
       ]
     },
@@ -104,7 +132,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        750,
+        1000,
         300
       ]
     },
@@ -134,19 +162,19 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        1000,
+        1250,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const response = items[0].json;\nlet parsed = {};\ntry {\n  const content = response.choices[0].message.content;\n  parsed = JSON.parse(content);\n} catch(e) {\n  parsed = { \n    is_invoice: false,\n    vendor_name: \"Unknown\",\n    total_amount: 0.0,\n    invoice_number: \"\",\n    confidence_score: 0.0\n  };\n}\n\nconst ctx = $('Extract Context').first().json;\n\nreturn [{\n  json: {\n    extracted_data: parsed,\n    is_invoice: parsed.is_invoice,\n    vendor_name: parsed.vendor_name,\n    total_amount: parsed.total_amount,\n    invoice_number: parsed.invoice_number,\n    invoice_date: parsed.invoice_date,\n    confidence_score: parsed.confidence_score,\n    request_id: ctx.request_id,\n    user_email: ctx.user_email,\n    google_access_token: ctx.google_access_token\n  }\n}];"
+        "jsCode": "const response = items[0].json;\nlet parsed = {};\ntry {\n  const content = response.choices[0].message.content;\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = {\n    is_invoice: false,\n    vendor_name: 'Unknown',\n    total_amount: 0.0,\n    invoice_number: '',\n    confidence_score: 0.0,\n  };\n}\n\nconst ctx = $('Extract Context').first().json;\n\nreturn [{\n  json: {\n    extracted_data: parsed,\n    is_invoice: parsed.is_invoice,\n    vendor_name: parsed.vendor_name,\n    total_amount: parsed.total_amount,\n    invoice_number: parsed.invoice_number,\n    invoice_date: parsed.invoice_date,\n    confidence_score: parsed.confidence_score,\n    request_id: ctx.request_id,\n    user_email: ctx.user_email,\n  },\n}];"
       },
       "name": "Parse Groq Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        1250,
+        1500,
         300
       ]
     },
@@ -173,49 +201,36 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [
-        1500,
+        1750,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "const userEmail = $('Extract Context').first().json.user_email;\nconst email = [\n  'To: ' + userEmail,\n  'Subject: Invoice Verification Required',\n  'Content-Type: text/plain',\n  '',\n  'Please verify this invoice. AI confidence was low or document was not recognized as an invoice.'\n].join('\\n');\nconst encoded = Buffer.from(email).toString('base64url');\nreturn [{ json: { raw: encoded } }];"
+        "jsCode": "const userEmail = $('Extract Context').first().json.user_email;\nreturn [{\n  json: {\n    request_id: $('Extract Context').first().json.request_id,\n    user_email: userEmail,\n    to: userEmail,\n    subject: 'Invoice Verification Required',\n    body: 'Please verify this invoice. AI confidence was low or document was not recognized as an invoice.',\n    step_id: 'send_emails',\n    metadata: { source: 'invoice_workflow' },\n  },\n}];"
       },
-      "name": "Build Approval Email",
+      "name": "Build Approval Email Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        1750,
+        2000,
         200
       ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $('Extract Context').first().json.google_access_token }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ $('Extract Context').first().json.backend_base_url + '/api/send-email' }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"raw\": \"{{ $json.raw }}\"\n}",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {}
       },
-      "name": "Send Approval Email via Gmail API",
+      "name": "Send Approval Email via Backend",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        2000,
+        2250,
         200
       ]
     },
@@ -245,7 +260,23 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
       "position": [
-        1750,
+        2250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', request_id: $('Extract Context').first().json.request_id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2500,
         400
       ]
     }
@@ -255,7 +286,25 @@
       "main": [
         [
           {
+            "node": "Validate Backend Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Backend Secret": {
+      "main": [
+        [
+          {
             "node": "Extract Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Unauthorized",
             "type": "main",
             "index": 0
           }
@@ -310,7 +359,7 @@
       "main": [
         [
           {
-            "node": "Build Approval Email",
+            "node": "Build Approval Email Request",
             "type": "main",
             "index": 0
           }
@@ -324,22 +373,33 @@
         ]
       ]
     },
-    "Build Approval Email": {
+    "Build Approval Email Request": {
       "main": [
         [
           {
-            "node": "Send Approval Email via Gmail API",
+            "node": "Send Approval Email via Backend",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send Approval Email via Gmail API": {
+    "Send Approval Email via Backend": {
       "main": [
         [
           {
             "node": "Send Execution Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Execution Callback": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
             "type": "main",
             "index": 0
           }

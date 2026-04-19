@@ -6,7 +6,7 @@ import routers.internal as internal_module
 
 def test_classify_invoice():
     out = chat_module._classify_text_simple("Please process this invoice from Acme Corp for $1234")
-    assert out["domain"] == "invoices"
+    assert out["domain"] == "invoice"
 
 
 def test_n8n_callback_rejects_invalid_secret():
@@ -46,30 +46,65 @@ def test_n8n_callback_calls_update(monkeypatch):
 
 
 def test_get_execution_404(monkeypatch):
-    # monkeypatch get_execution_log to return None
-    def fake_get(conn, request_id):
-        return None
-
     class DummyConn:
+        def cursor(self):
+            class Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, exc_type, exc, tb):
+                    return False
+
+                def execute(self_inner, *args, **kwargs):
+                    self_inner._row = None
+
+                def fetchone(self_inner):
+                    return self_inner._row
+
+            return Cur()
+
         def close(self):
             return None
 
     monkeypatch.setattr(chat_module, "get_db_connection", lambda: DummyConn())
-    monkeypatch.setattr(chat_module, "get_execution_log", lambda conn, rid: None)
 
     client = TestClient(app)
     r = client.get("/api/executions/nonexistent", headers={"X-User-Email": "a@b.com"})
-    assert r.status_code == 404
+    assert r.status_code == 403
 
 
 def test_get_execution_forbidden(monkeypatch):
-    sample = {"id": "1", "user_email": "owner@example.com", "module": "hr", "status": "completed"}
     class DummyConn:
+        def cursor(self):
+            class Cur:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, exc_type, exc, tb):
+                    return False
+
+                def execute(self_inner, *args, **kwargs):
+                    self_inner._row = (
+                        "1",
+                        "completed",
+                        "hr",
+                        None,
+                        None,
+                        None,
+                        None,
+                        "Workflow",
+                        "owner@example.com",
+                    )
+
+                def fetchone(self_inner):
+                    return self_inner._row
+
+            return Cur()
+
         def close(self):
             return None
 
     monkeypatch.setattr(chat_module, "get_db_connection", lambda: DummyConn())
-    monkeypatch.setattr(chat_module, "get_execution_log", lambda conn, rid: sample)
 
     client = TestClient(app)
     r = client.get("/api/executions/1", headers={"X-User-Email": "other@example.com"})

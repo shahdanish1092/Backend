@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Body
 from typing import Optional
 
 from database import get_db_connection
+from orchestration import build_n8n_webhook_headers
 
 router = APIRouter()
 
@@ -44,11 +45,6 @@ async def trigger_meeting_webhook(
                 raise HTTPException(status_code=500, detail="Meeting workflow not configured in database")
             n8n_webhook_url = wf_row[0]
 
-            # Fetch google token if available
-            cur.execute("SELECT access_token FROM google_tokens WHERE user_email = %s", (user_email,))
-            tok_row = cur.fetchone()
-            google_token = tok_row[0] if tok_row else ""
-            
         conn.commit()
 
         # Build payload
@@ -64,21 +60,11 @@ async def trigger_meeting_webhook(
                 "type": type,
                 "content": content,
                 "title": title,
-                "attendees": attendees,
-                "google_access_token": google_token
+                "attendees": attendees
             }
         }
 
-        # POST to webhook
-        auth_user = os.getenv("N8N_BASIC_AUTH_USER", "")
-        auth_pass = os.getenv("N8N_BASIC_AUTH_PASSWORD", "")
-        import base64
-        basic_auth_b64 = base64.b64encode(f"{auth_user}:{auth_pass}".encode()).decode()
-        
-        headers = {
-            "Authorization": f"Basic {basic_auth_b64}",
-            "Content-Type": "application/json"
-        }
+        headers = build_n8n_webhook_headers()
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(n8n_webhook_url, json=webhook_payload, headers=headers)
