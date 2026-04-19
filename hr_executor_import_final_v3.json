@@ -312,39 +312,6 @@
       "main": [
         [
           {
-            "node": "Extract Shortlisted Candidate",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Shortlisted Candidate": {
-      "main": [
-        [
-          {
-            "node": "Create Calendar Event",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create Calendar Event": {
-      "main": [
-        [
-          {
-            "node": "Send Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Send Email": {
-      "main": [
-        [
-          {
             "node": "Execution Callback",
             "type": "main",
             "index": 0

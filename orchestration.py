@@ -115,6 +115,12 @@ def update_execution_log(
     if not request_id:
         return
 
+    existing = get_execution_log(conn, request_id)
+    current_status = existing.get("status") if existing else None
+    terminal_statuses = {"completed", "failed", "timeout"}
+    if current_status in terminal_statuses and status not in (None, *terminal_statuses):
+        status = None
+
     fields = ["updated_at = now()"]
     params: list[Any] = []
 
