@@ -4,22 +4,22 @@ INSERT INTO workflows (name, n8n_id, n8n_webhook_url, domain, status)
 VALUES 
   (
     'HR Recruitment Executor',
-    'cUNV8MuHEZMQpn4U',
-    'https://n8n-production-b3aa.up.railway.app/webhook/execute-workflow',
+    'V1v6fXo7jskZjvif',
+    'https://n8n-production-8c140.up.railway.app/webhook/execute-workflow',
     'hr',
     'active'
   ),
   (
     'Invoice Processor',
-    'INVOICE_WORKFLOW_ID',
-    'https://n8n-production-b3aa.up.railway.app/webhook/invoice-process',
+    'uZLgL9y2HZtyKdjM',
+    'https://n8n-production-8c140.up.railway.app/webhook/invoice-webhook-v2',
     'invoice',
     'active'
   ),
   (
     'Meeting Summarizer',
-    'MEETING_WORKFLOW_ID',
-    'https://n8n-production-b3aa.up.railway.app/webhook/meeting-summarize',
+    'IKw6v1FpCLV3zni5',
+    'https://n8n-production-8c140.up.railway.app/webhook/meeting-webhook-v2',
     'meeting',
     'active'
   )
