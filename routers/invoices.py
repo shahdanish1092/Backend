@@ -82,9 +82,17 @@ async def _trigger_invoice_webhook(
             resp = await client.post(n8n_webhook_url, json=webhook_payload, headers=headers)
             resp.raise_for_status()
 
-        # Update status
+        # Update status (avoid overwriting terminal status if callback already arrived)
         with conn.cursor() as cur:
-            cur.execute("UPDATE execution_logs SET status = 'running', updated_at = now() WHERE id = %s", (execution_id,))
+            cur.execute(
+                """
+                UPDATE execution_logs
+                SET status = 'running', updated_at = now()
+                WHERE id = %s
+                  AND status NOT IN ('completed', 'failed', 'timeout')
+                """,
+                (execution_id,),
+            )
         conn.commit()
 
         return {"execution_id": execution_id, "status": "processing", "message": "Invoice uploaded. Processing started."}
