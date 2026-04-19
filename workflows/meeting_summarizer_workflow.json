@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "meeting-summarize",
+        "path": "meeting-webhook-v2",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -485,7 +485,6 @@
       ]
     }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1"
   }

@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "invoice-process",
+        "path": "invoice-webhook-v2",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -407,7 +407,6 @@
       ]
     }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1"
   }
