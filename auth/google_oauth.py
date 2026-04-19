@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 # SCOPES kept as a module constant
 SCOPES = [
@@ -30,7 +31,7 @@ def create_oauth_flow():
     flow.redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     return flow
 
-def refresh_token_if_needed(access_token: str, refresh_token: str):
+def refresh_token_if_needed(access_token: str, refresh_token: str, token_expiry: datetime | None = None):
     # Import deferred
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
@@ -38,6 +39,7 @@ def refresh_token_if_needed(access_token: str, refresh_token: str):
     creds = Credentials(
         token=access_token,
         refresh_token=refresh_token,
+        expiry=token_expiry,
         client_id=os.getenv("GOOGLE_CLIENT_ID"),
         client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
         token_uri="https://oauth2.googleapis.com/token",

@@ -284,7 +284,7 @@ def get_valid_google_token(user_email: str) -> tuple[str, Any]:
             raise RuntimeError("User has not connected Google account")
 
         access_token, refresh_token, token_expiry = token_row
-        creds = refresh_token_if_needed(access_token, refresh_token)
+        creds = refresh_token_if_needed(access_token, refresh_token, token_expiry)
         next_access_token = creds.token or access_token
         next_refresh_token = creds.refresh_token or refresh_token
         next_expiry = creds.expiry or token_expiry
