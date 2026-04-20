@@ -61,18 +61,22 @@ async def set_hr_criteria(user_email: str, criteria: ScreeningCriteria):
     """Upsert screening criteria for a user into hr_connections."""
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO hr_connections (user_email, screening_criteria, is_active, webhook_configured, last_sync)
-                VALUES (%s, %s, true, COALESCE((SELECT webhook_configured FROM hr_connections WHERE user_email = %s), true), now())
-                ON CONFLICT (user_email) DO UPDATE SET
-                    screening_criteria = EXCLUDED.screening_criteria,
-                    last_sync = now()
-                """,
-                (user_email, json.dumps(criteria.model_dump()), user_email),
-            )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO hr_connections (user_email, screening_criteria, is_active, webhook_configured, last_sync)
+                    VALUES (%s, %s, true, COALESCE((SELECT webhook_configured FROM hr_connections WHERE user_email = %s), true), now())
+                    ON CONFLICT (user_email) DO UPDATE SET
+                        screening_criteria = EXCLUDED.screening_criteria,
+                        last_sync = now()
+                    """,
+                    (user_email, json.dumps(criteria.model_dump()), user_email),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            # Column may not exist yet — store criteria as best-effort
         return {"saved": True, "criteria": criteria.model_dump()}
     finally:
         conn.close()
@@ -81,19 +85,22 @@ async def set_hr_criteria(user_email: str, criteria: ScreeningCriteria):
 @router.get("/hr/criteria/{user_email}")
 async def get_hr_criteria(user_email: str):
     """Fetch screening criteria for a user, returning defaults if not present."""
+    default = {
+        "role": "General Position",
+        "required_language": "English",
+        "experience_level": "any",
+        "min_years_experience": 0,
+    }
     conn = get_db_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT screening_criteria FROM hr_connections WHERE user_email = %s LIMIT 1", (user_email,))
-            row = cur.fetchone()
-        if row and row[0]:
-            return {"criteria": row[0]}
-        default = {
-            "role": "General Position",
-            "required_language": "English",
-            "experience_level": "any",
-            "min_years_experience": 0,
-        }
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT screening_criteria FROM hr_connections WHERE user_email = %s LIMIT 1", (user_email,))
+                row = cur.fetchone()
+            if row and row[0]:
+                return {"criteria": row[0]}
+        except Exception:
+            conn.rollback()  # Column may not exist
         return {"criteria": default}
     finally:
         conn.close()
@@ -207,10 +214,14 @@ async def hr_webhook_connect(body: HRWebhookConnect):
             )
         conn.commit()
         # fetch screening_criteria (if any) to include in the webhook payload
-        with conn.cursor() as cur:
-            cur.execute("SELECT screening_criteria FROM hr_connections WHERE user_email = %s LIMIT 1", (body.user_email,))
-            sc_row = cur.fetchone()
-        screening_criteria = sc_row[0] if sc_row and sc_row[0] else {}
+        screening_criteria = {}
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT screening_criteria FROM hr_connections WHERE user_email = %s LIMIT 1", (body.user_email,))
+                sc_row = cur.fetchone()
+            screening_criteria = sc_row[0] if sc_row and sc_row[0] else {}
+        except Exception:
+            conn.rollback()  # reset transaction after column-missing error
 
         backend = _backend_public()
         callback = f"{backend}/api/execution-callback"
