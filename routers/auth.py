@@ -15,9 +15,14 @@ async def google_auth():
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     if not client_id:
-        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID is missing in Backend Variables")
+        raise HTTPException(
+            status_code=500, detail="GOOGLE_CLIENT_ID is missing in Backend Variables"
+        )
     if not redirect_uri:
-        raise HTTPException(status_code=500, detail="GOOGLE_REDIRECT_URI is missing in Backend Variables")
+        raise HTTPException(
+            status_code=500,
+            detail="GOOGLE_REDIRECT_URI is missing in Backend Variables",
+        )
 
     scope = "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/spreadsheets"
     params = {
@@ -61,7 +66,9 @@ async def google_callback(request: Request):
     async with httpx.AsyncClient() as client:
         resp = await client.post(token_url, data=data, timeout=20.0)
     if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Token exchange failed: {resp.text}")
+        raise HTTPException(
+            status_code=502, detail=f"Token exchange failed: {resp.text}"
+        )
     token_response = resp.json()
     access_token = token_response.get("access_token")
     refresh_token = token_response.get("refresh_token")
@@ -69,7 +76,11 @@ async def google_callback(request: Request):
 
     # Get userinfo
     async with httpx.AsyncClient() as client:
-        ui = await client.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {access_token}"}, timeout=10.0)
+        ui = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10.0,
+        )
     if ui.status_code != 200:
         raise HTTPException(status_code=502, detail="Failed to fetch userinfo")
     userinfo = ui.json()
@@ -100,7 +111,13 @@ async def google_callback(request: Request):
             VALUES (%s, %s, %s, now() + (interval '%s seconds'), %s, now(), now())
             ON CONFLICT (user_email) DO UPDATE SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token, token_expiry = EXCLUDED.token_expiry, scopes = EXCLUDED.scopes, updated_at = now()
             """,
-            (email, access_token, refresh_token, expires_in or 0, token_response.get("scope", "").split()),
+            (
+                email,
+                access_token,
+                refresh_token,
+                expires_in or 0,
+                token_response.get("scope", "").split(),
+            ),
         )
         conn.commit()
         cur.close()
@@ -111,3 +128,65 @@ async def google_callback(request: Request):
     redirect_to = f"{frontend.rstrip('/')}/dashboard?user_email={urllib.parse.quote(email)}&auth=success"
     return RedirectResponse(redirect_to)
 
+
+@router.get("/google/token")
+async def get_google_token(user_email: str):
+    """Fetch Google access token for a user, refreshing if needed."""
+    from datetime import datetime, timezone
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT access_token, refresh_token, token_expiry FROM google_tokens WHERE user_email = %s",
+            (user_email,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No Google token for this user")
+
+        access_token, refresh_token, token_expiry = row
+        if token_expiry and token_expiry.tzinfo is None:
+            token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+
+        # Check if token is expired
+        if token_expiry and token_expiry < datetime.now(timezone.utc):
+            # Need to refresh
+            client_id = os.getenv("GOOGLE_CLIENT_ID")
+            client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+            if not client_id or not client_secret:
+                raise HTTPException(
+                    status_code=500, detail="Google credentials missing"
+                )
+
+            token_url = "https://oauth2.googleapis.com/token"
+            data = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(token_url, data=data, timeout=20.0)
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502, detail=f"Token refresh failed: {resp.text}"
+                )
+
+            new_token_response = resp.json()
+            new_access_token = new_token_response.get("access_token")
+            new_expires_in = new_token_response.get("expires_in", 3600)
+
+            cur.execute(
+                "UPDATE google_tokens SET access_token = %s, token_expiry = now() + (interval '%s seconds'), updated_at = now() WHERE user_email = %s",
+                (new_access_token, new_expires_in or 0, user_email),
+            )
+            conn.commit()
+            access_token = new_access_token
+
+        return {
+            "access_token": access_token,
+            "expires_at": token_expiry.isoformat() if token_expiry else None,
+        }
+    finally:
+        conn.close()
