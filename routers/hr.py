@@ -29,6 +29,13 @@ class HRWebhookConnect(BaseModel):
     secret: Optional[str] = None
 
 
+class ScreeningCriteria(BaseModel):
+    role: str
+    required_language: str
+    experience_level: str  # fresher | mid | senior | any
+    min_years_experience: int = 0
+
+
 def _backend_public() -> str:
     return (os.getenv("BACKEND_PUBLIC_URL") or os.getenv("FASTAPI_BASE_URL") or "http://localhost:8000").rstrip(
         "/"
@@ -47,6 +54,49 @@ def _ensure_user(conn, email: str) -> None:
 @router.get("/hr/ping")
 async def hr_ping():
     return {"ok": True, "module": "hr"}
+
+
+@router.post("/hr/criteria/{user_email}")
+async def set_hr_criteria(user_email: str, criteria: ScreeningCriteria):
+    """Upsert screening criteria for a user into hr_connections."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO hr_connections (user_email, screening_criteria, is_active, webhook_configured, last_sync)
+                VALUES (%s, %s, true, COALESCE((SELECT webhook_configured FROM hr_connections WHERE user_email = %s), true), now())
+                ON CONFLICT (user_email) DO UPDATE SET
+                    screening_criteria = EXCLUDED.screening_criteria,
+                    last_sync = now()
+                """,
+                (user_email, json.dumps(criteria.model_dump()), user_email),
+            )
+        conn.commit()
+        return {"saved": True, "criteria": criteria.model_dump()}
+    finally:
+        conn.close()
+
+
+@router.get("/hr/criteria/{user_email}")
+async def get_hr_criteria(user_email: str):
+    """Fetch screening criteria for a user, returning defaults if not present."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT screening_criteria FROM hr_connections WHERE user_email = %s LIMIT 1", (user_email,))
+            row = cur.fetchone()
+        if row and row[0]:
+            return {"criteria": row[0]}
+        default = {
+            "role": "General Position",
+            "required_language": "English",
+            "experience_level": "any",
+            "min_years_experience": 0,
+        }
+        return {"criteria": default}
+    finally:
+        conn.close()
 
 
 @router.get("/hr/status/{user_email}")
@@ -156,6 +206,11 @@ async def hr_webhook_connect(body: HRWebhookConnect):
                 ),
             )
         conn.commit()
+        # fetch screening_criteria (if any) to include in the webhook payload
+        with conn.cursor() as cur:
+            cur.execute("SELECT screening_criteria FROM hr_connections WHERE user_email = %s LIMIT 1", (body.user_email,))
+            sc_row = cur.fetchone()
+        screening_criteria = sc_row[0] if sc_row and sc_row[0] else {}
 
         backend = _backend_public()
         callback = f"{backend}/api/execution-callback"
@@ -167,6 +222,7 @@ async def hr_webhook_connect(body: HRWebhookConnect):
                 "user_email": body.user_email,
                 "hr_webhook_url": body.hr_webhook_url,
                 "input_format": body.input_format,
+                "screening_criteria": screening_criteria,
             },
         }
 
